@@ -287,6 +287,8 @@
     opts.headers['X-GitHub-Api-Version'] = '2022-11-28';
     if (opts.body) opts.headers['Content-Type'] = 'application/json';
     opts.cache = 'no-store';
+    // keepalive：页面关闭 / 锁屏时请求不会被浏览器取消（限 64KB，我们数据远小于此）
+    if (opts.keepalive == null) opts.keepalive = true;
     return fetch(url, opts);
   }
 
@@ -299,12 +301,25 @@
     return m2 ? m2[1] : v;
   }
 
-  function syncNow(reason) {
+  function syncNow(reason, fast) {
     if (!syncCfg.gistId || !syncCfg.token) {
       setStatus('idle', '未连接');
       return Promise.resolve(false);
     }
     if (syncing) return Promise.resolve(false);
+
+    // fast：页面正在隐藏，只有本地改动，直接推，不再拉远端做合并。
+    // 目的只有一个——别让刚点的打卡丢在半路。
+    if (fast) {
+      clearTimeout(syncTimer);          // 取消待执行的定时同步，避免紧接着重复请求
+      if (!isDirty()) return Promise.resolve(false);
+      syncing = true;
+      return pushGist().catch(function () {
+        setStatus('warn', '离线待同步');
+        return false;
+      }).then(function (r) { syncing = false; return r; });
+    }
+
     syncing = true;
     setStatus('busy', '同步中');
 
@@ -371,6 +386,7 @@
         clearDirty();
         setStatus('ok', '已同步 ' + hhmm());
         renderAll();
+        return true;
       });
   }
 
@@ -809,16 +825,19 @@
       toast('已清空本机');
     });
 
-    // 回到前台 / 联网时补同步
+    // 页面隐藏（锁屏 / 切走 / 关标签）前立刻把改动推上去；
+    // 回到前台时无条件拉一次远端，这样另一台设备的记录能马上看到
     document.addEventListener('visibilitychange', function () {
-      if (!document.hidden) {
+      if (document.hidden) {
+        if (isDirty()) syncNow('hidden', true);
+      } else {
         renderToday();
-        if (isDirty() || statusKind === 'warn') scheduleSync(300);
+        scheduleSync(300);
       }
     });
     window.addEventListener('online', function () { scheduleSync(300); });
-    window.addEventListener('beforeunload', function () {
-      if (isDirty()) scheduleSync(0);
+    window.addEventListener('pagehide', function () {
+      if (isDirty()) syncNow('pagehide', true);
     });
   }
 

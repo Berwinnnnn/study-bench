@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#F7F6F2">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="学习打卡">
+<title>学习打卡</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<style>
+:root{
+  --bg:#F7F6F2; --card:#FFFFFF; --ink:#1E2320; --ink2:#5C6660; --muted:#98A09B;
+  --line:#EAE8E2; --green:#3D8B68; --green-d:#2F6E52; --green-l:#E9F3ED;
+  --amber:#C98A2E; --amber-l:#FBF0DE; --red:#B23B3B; --red-l:#FBF1F1;
+  --r:18px;
+  --sh:0 1px 2px rgba(30,35,32,.04), 0 8px 24px -14px rgba(30,35,32,.16);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font:15px/1.6 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased; overscroll-behavior-y:none;
+}
+.app{max-width:520px;margin:0 auto;min-height:100vh;min-height:100dvh;padding:0 16px 96px;position:relative}
+
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 2px 6px;gap:10px}
+.brand{font-size:12.5px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase;flex:none}
+.sync{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--ink2);
+  background:#F0EFEA;border:0;border-radius:20px;padding:5px 10px;cursor:pointer;font-family:inherit;
+  transition:background .2s,color .2s;white-space:nowrap;max-width:56vw;overflow:hidden}
+.sync .dot{width:6px;height:6px;border-radius:50%;background:var(--muted);flex:none;transition:background .2s}
+.sync.ok{background:var(--green-l);color:var(--green-d)} .sync.ok .dot{background:var(--green)}
+.sync.warn{background:var(--amber-l);color:#7A5320} .sync.warn .dot{background:var(--amber)}
+.sync.err{background:var(--red-l);color:var(--red)} .sync.err .dot{background:var(--red)}
+.sync.busy .dot{animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}}
+
+.card{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);padding:18px;margin-top:14px}
+.card-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:10px}
+h2{font-size:14px;font-weight:600;margin:0;letter-spacing:.02em}
+.pill{font-size:11.5px;color:var(--ink2);background:#F3F2EE;border-radius:20px;padding:3px 10px;white-space:nowrap}
+.pill.on{background:var(--green-l);color:var(--green-d)}
+
+/* Hero */
+.hero{padding:20px 18px 18px}
+.hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.date{font-size:12.5px;color:var(--muted);margin:0 0 4px}
+.hero-title{font-size:21px;font-weight:600;margin:0;letter-spacing:-.01em;line-height:1.3}
+.streak{text-align:right;flex:none}
+.streak-num{display:block;font-size:27px;font-weight:600;line-height:1;color:var(--green-d);
+  font-variant-numeric:tabular-nums;transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
+.streak-num.bump{transform:scale(1.2)}
+.streak-lbl{font-size:11px;color:var(--muted);letter-spacing:.06em}
+.checkin{
+  width:100%;margin-top:16px;border:0;border-radius:14px;padding:15px;cursor:pointer;
+  background:var(--green);color:#fff;font-size:15px;font-weight:600;letter-spacing:.02em;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  transition:transform .12s,background .2s;font-family:inherit;
+}
+.checkin:active{transform:scale(.985)}
+.checkin.done{background:var(--green-l);color:var(--green-d)}
+.checkin .ico{width:18px;height:18px;border-radius:50%;border:1.6px solid currentColor;
+  display:grid;place-items:center;font-size:11px;line-height:1;flex:none;transition:.2s}
+.checkin.done .ico{background:var(--green);border-color:var(--green);color:#fff}
+.hint{font-size:12px;color:var(--muted);margin:10px 0 0;line-height:1.6}
+
+/* 单词行 */
+.wordrow{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;
+  padding:2px 0 14px;border-bottom:1px solid #F4F3EF}
+.wordrow-main{min-width:0}
+.word-label{font-size:14px;font-weight:500;display:flex;align-items:center;gap:7px}
+.word-label .ck{width:17px;height:17px;border-radius:5px;border:1.6px solid #D5D9D5;
+  flex:none;display:grid;place-items:center;font-size:10px;color:transparent;transition:.15s}
+.word-label.done .ck{background:var(--green);border-color:var(--green);color:#fff}
+.word-label.done{color:var(--muted)}
+.bignum{display:flex;align-items:baseline;gap:5px;margin-top:6px}
+.bignum b{font-size:38px;font-weight:600;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums}
+.bignum i{font-size:12.5px;color:var(--muted);font-style:normal}
+.quick{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;flex:1;max-width:180px}
+.quick button{
+  border:1px solid var(--line);background:#FCFCFA;color:var(--ink);border-radius:10px;
+  padding:10px 0;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit;
+  transition:background .15s,transform .1s,border-color .15s;
+}
+.quick button:active{transform:scale(.94);background:var(--green-l);border-color:#CDE5D8}
+.rowlinks{display:flex;gap:14px;margin-top:11px;font-size:12.5px;color:var(--ink2)}
+.rowlinks button{background:none;border:0;padding:0;color:inherit;font-family:inherit;
+  font-size:12.5px;cursor:pointer;border-bottom:1px dashed #D8DDD8}
+.rowlinks button:active{color:var(--green-d)}
+
+/* 待办 */
+.todo{display:flex;align-items:flex-start;gap:11px;padding:11px 0;border-bottom:1px solid #F4F3EF;cursor:pointer}
+.todo:last-of-type{border-bottom:0}
+.tick{width:19px;height:19px;border-radius:6px;border:1.6px solid #D5D9D5;flex:none;margin-top:2px;
+  display:grid;place-items:center;font-size:11px;color:transparent;transition:.15s}
+.todo.done .tick{background:var(--green);border-color:var(--green);color:#fff}
+.todo-body{flex:1;min-width:0}
+.todo-title{font-size:14.5px;line-height:1.45;word-break:break-word}
+.todo.done .todo-title{color:var(--muted);text-decoration:line-through;text-decoration-color:#C9CFCA}
+.todo-rule{font-size:11.5px;color:var(--muted);margin-top:1px}
+.todo-del{background:none;border:0;color:#D3D8D3;font-size:16px;cursor:pointer;padding:0 0 0 6px;line-height:1.2;flex:none}
+.todo-del:hover{color:var(--red)}
+.add{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
+.add-row{display:flex;gap:7px}
+.add input[type=text]{flex:1;min-width:0;border:1px solid var(--line);border-radius:10px;padding:9px 11px;
+  font-size:14px;font-family:inherit;background:#FCFCFA;color:var(--ink)}
+.add input:focus,select:focus{outline:none;border-color:var(--green);background:#fff}
+.add select{border:1px solid var(--line);border-radius:10px;padding:9px 6px;font-size:13px;
+  font-family:inherit;background:#FCFCFA;color:var(--ink2);flex:none}
+.add input[type=number]{width:58px;border:1px solid var(--line);border-radius:10px;padding:9px 6px;
+  font-size:13px;font-family:inherit;background:#FCFCFA;color:var(--ink2)}
+.add button{border:0;border-radius:10px;background:var(--ink);color:#fff;font-size:17px;width:40px;
+  cursor:pointer;font-family:inherit;line-height:1;flex:none}
+.sub{margin-top:7px;display:flex;gap:7px;align-items:center}
+
+/* 回顾 */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:2px}
+.stat-v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.stat-k{font-size:11.5px;color:var(--muted);margin-top:1px}
+.prog-line{display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink2);margin-bottom:7px}
+.prog-line b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+.bar{height:9px;border-radius:9px;background:#F0EFEA;overflow:hidden}
+.bar>i{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,#7CBF9E,#3D8B68);
+  width:0;transition:width .6s cubic-bezier(.2,.8,.2,1)}
+.forecast{font-size:12.5px;color:var(--ink2);margin:11px 0 0;line-height:1.65}
+.forecast b{color:var(--green-d);font-weight:600}
+
+.hm{display:flex;gap:3px;margin-top:14px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+.hm-col{display:flex;flex-direction:column;gap:3px;flex:none}
+.hm-cell{width:13px;height:13px;border-radius:3px;background:#EFEEE9;cursor:pointer;transition:transform .12s}
+.hm-cell:active{transform:scale(1.3)}
+.hm-cell.l1{background:#CBE6D7}.hm-cell.l2{background:#93CBAE}
+.hm-cell.l3{background:#57A87D}.hm-cell.l4{background:#2F7F58}
+.hm-cell.today{box-shadow:0 0 0 1.6px var(--card),0 0 0 3.2px var(--green-d)}
+.hm-legend{display:flex;align-items:center;gap:5px;justify-content:flex-end;margin-top:6px;font-size:11px;color:var(--muted)}
+.hm-legend i{width:10px;height:10px;border-radius:2.5px;display:block}
+
+/* 设置 */
+.field{margin-top:15px}
+.field:first-child{margin-top:0}
+.field label{display:block;font-size:12.5px;color:var(--ink2);margin-bottom:6px}
+.field input{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+  font-size:14px;font-family:inherit;background:#FCFCFA;color:var(--ink)}
+.field .sub-note{font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.6}
+.btn-row{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.btn{flex:1;min-width:112px;border:1px solid var(--line);background:#FCFCFA;color:var(--ink);
+  border-radius:11px;padding:11px;font-size:13.5px;cursor:pointer;font-family:inherit;font-weight:500;
+  transition:background .15s;white-space:nowrap}
+.btn:hover{background:#F5F4EF}
+.btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+.btn.primary:hover{background:#2C332E}
+.btn.danger{color:var(--red);border-color:#F0DCDC}
+.btn.danger:hover{background:var(--red-l)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.sec-title{font-size:12px;letter-spacing:.1em;color:var(--muted);margin:24px 2px 0;text-transform:uppercase}
+.steps{font-size:12.5px;color:var(--ink2);line-height:1.75;padding-left:18px;margin:8px 0 0}
+.steps li{margin-bottom:5px}
+.steps a{color:var(--green-d)}
+
+/* Tabbar */
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:40;background:rgba(247,246,242,.92);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line);
+  display:flex;padding:8px 0 max(10px,env(safe-area-inset-bottom))}
+.tabbar-inner{display:flex;width:100%;max-width:520px;margin:0 auto}
+.tab{flex:1;border:0;background:none;padding:4px 0;cursor:pointer;font-family:inherit;
+  display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--muted);
+  font-size:10.5px;letter-spacing:.04em;transition:color .15s}
+.tab svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.tab.on{color:var(--green-d)}
+
+/* Sheet */
+.mask{position:fixed;inset:0;background:rgba(30,35,32,.34);z-index:60;display:flex;
+  align-items:flex-end;justify-content:center;opacity:0;transition:opacity .2s}
+.mask.show{opacity:1}
+.sheet{background:var(--card);width:100%;max-width:520px;border-radius:20px 20px 0 0;
+  padding:20px 20px calc(20px + env(safe-area-inset-bottom));transform:translateY(18px);
+  transition:transform .24s cubic-bezier(.2,.8,.2,1)}
+.mask.show .sheet{transform:translateY(0)}
+.sheet h3{font-size:16px;margin:0 0 4px;font-weight:600}
+.sheet .sd{font-size:12.5px;color:var(--muted);margin:0 0 16px}
+.sheet .f{margin-bottom:14px}
+.sheet .f label{display:block;font-size:12.5px;color:var(--ink2);margin-bottom:6px}
+.sheet .f input{width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 12px;
+  font-size:16px;font-family:inherit;background:#FCFCFA}
+.chk{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--ink);cursor:pointer}
+.chk input{width:17px;height:17px;accent-color:var(--green)}
+.sheet-actions{display:flex;gap:8px;margin-top:20px}
+
+.toast{position:fixed;left:50%;bottom:100px;transform:translate(-50%,10px);z-index:80;
+  background:rgba(30,35,32,.93);color:#fff;font-size:13px;padding:9px 16px;border-radius:20px;
+  opacity:0;pointer-events:none;transition:.22s;white-space:nowrap;max-width:88vw;
+  overflow:hidden;text-overflow:ellipsis}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <span class="brand">Study Bench</span>
+    <button class="sync" id="syncBtn" title="点击手动同步">
+      <span class="dot"></span><span id="syncTxt">未连接</span>
+    </button>
+  </div>
+
+  <!-- ============ 今日 ============ -->
+  <section id="view-today">
+
+    <div class="card hero">
+      <div class="hero-top">
+        <div>
+          <p class="date" id="todayDate">—</p>
+          <h1 class="hero-title" id="heroTitle">今天还没开始</h1>
+        </div>
+        <div class="streak">
+          <span class="streak-num" id="streakNum">0</span>
+          <span class="streak-lbl">连续天</span>
+        </div>
+      </div>
+      <button class="checkin" id="checkinBtn">
+        <span class="ico" id="checkinIco"></span>
+        <span id="checkinTxt">打卡：今天学了</span>
+      </button>
+      <p class="hint">背单词、待办任一项完成就算这天有学习。周末只学语法也不会断连续。</p>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <h2>今日任务</h2>
+        <span class="pill" id="wordPill">目标 50 词</span>
+      </div>
+
+      <div class="wordrow">
+        <div class="wordrow-main">
+          <div class="word-label" id="wordLabel">
+            <span class="ck">✓</span><span>背四级单词</span>
+          </div>
+          <div class="bignum"><b id="wordNum">0</b><i>词 · 今天</i></div>
+        </div>
+        <div class="quick">
+          <button data-add="20">+20</button>
+          <button data-add="50">+50</button>
+          <button data-add="100">+100</button>
+        </div>
+      </div>
+      <div class="rowlinks">
+        <button id="customBtn">填准确数</button>
+        <button id="undoBtn">记错了，退回</button>
+      </div>
+
+      <div id="todoList" style="margin-top:6px"></div>
+
+      <div class="add">
+        <div class="add-row">
+          <input type="text" id="todoInput" placeholder="加一条，如：语法 30 分钟" maxlength="40">
+          <select id="todoRule" aria-label="重复方式">
+            <option value="daily">每天</option>
+            <option value="weekly">每周</option>
+            <option value="monthly">每月</option>
+          </select>
+          <button id="todoAdd" aria-label="添加">+</button>
+        </div>
+        <div class="sub" id="subWeekly" hidden>
+          <select id="todoWeekday" aria-label="星期几">
+            <option value="1">周一</option><option value="2">周二</option><option value="3">周三</option>
+            <option value="4">周四</option><option value="5">周五</option><option value="6">周六</option>
+            <option value="0">周日</option>
+          </select>
+        </div>
+        <div class="sub" id="subMonthly" hidden>
+          <input type="number" id="todoDay" min="1" max="31" value="1" aria-label="几号">
+          <span style="font-size:12.5px;color:var(--muted)">号</span>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ============ 回顾 ============ -->
+  <section id="view-review" hidden>
+
+    <div class="card">
+      <div class="stats">
+        <div class="stat"><div class="stat-v" id="stTotalWords">0</div><div class="stat-k">累计词数</div></div>
+        <div class="stat"><div class="stat-v" id="stDays">0</div><div class="stat-k">学习天数</div></div>
+        <div class="stat"><div class="stat-v" id="stAvg">0</div><div class="stat-k">近 7 日均</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><h2>四级词汇进度</h2><span class="pill" id="pctPill">0%</span></div>
+      <div style="margin-top:12px">
+        <div class="prog-line">
+          <span>已背 <b id="pgDone">0</b> / <span id="pgGoal">4500</span></span>
+          <span id="pgLeft">剩 4500</span>
+        </div>
+        <div class="bar"><i id="pgBar"></i></div>
+      </div>
+      <p class="forecast" id="forecast">还没有足够数据估算。</p>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><h2>打卡记录</h2><span class="pill">近 18 周</span></div>
+      <div class="hm" id="heatmap"></div>
+      <div class="hm-legend">
+        <span>少</span>
+        <i style="background:#EFEEE9"></i><i style="background:#CBE6D7"></i>
+        <i style="background:#93CBAE"></i><i style="background:#57A87D"></i><i style="background:#2F7F58"></i>
+        <span>多</span>
+      </div>
+      <p class="hint">点任意格子可补录那一天的词数。</p>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><h2>最近 7 天</h2></div>
+      <div id="last7" style="font-size:13.5px;color:var(--ink2);line-height:2"></div>
+    </div>
+
+  </section>
+
+  <!-- ============ 设置 ============ -->
+  <section id="view-settings" hidden>
+
+    <p class="sec-title">目标</p>
+    <div class="card">
+      <div class="field">
+        <label for="goalInput">四级词汇总量</label>
+        <input type="number" id="goalInput" min="100" step="100" value="4500">
+        <p class="sub-note">四级大纲约 4500 词（含派生）。只影响进度条，不动已有记录。</p>
+      </div>
+      <div class="field">
+        <label for="targetInput">每日目标词数</label>
+        <input type="number" id="targetInput" min="1" step="10" value="50">
+        <p class="sub-note">只用于顶部提示，不达标不罚你。</p>
+      </div>
+    </div>
+
+    <p class="sec-title">云同步</p>
+    <div class="card">
+      <div class="field">
+        <label for="tokenInput">GitHub Token</label>
+        <input type="password" id="tokenInput" placeholder="github_pat_..." spellcheck="false" autocomplete="off">
+        <p class="sub-note" id="tokenNote">只保存在这台设备的浏览器里，不上传任何服务器。手机和电脑各填一次同一个 Token，就能共享记录。</p>
+      </div>
+      <details id="advBox" style="margin-top:2px">
+        <summary style="font-size:12px;color:var(--muted);cursor:pointer;outline:none">手动修改 Gist ID</summary>
+        <div class="field" style="margin-top:10px">
+          <input type="text" id="gistInput" placeholder="a1b2c3d4e5f6..." spellcheck="false" autocomplete="off">
+        </div>
+      </details>
+      <div class="btn-row">
+        <button class="btn primary" id="saveSync">保存并同步</button>
+        <button class="btn" id="testSync">测试连接</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="clearSync">断开同步</button>
+      </div>
+      <p class="sub-note" id="syncDetail">尚未配置。</p>
+    </div>
+
+    <p class="sec-title">数据</p>
+    <div class="card">
+      <div class="btn-row">
+        <button class="btn primary" id="exportBtn">导出 JSON</button>
+        <button class="btn" id="importBtn">导入 JSON</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn danger" id="clearBtn">清空本机数据</button>
+      </div>
+      <p class="sub-note">导出为完整数据文件（含待办规则与历史）。建议每月导一次存网盘。</p>
+      <input type="file" id="fileInput" accept=".json,application/json" hidden>
+    </div>
+
+    <p class="sub-note" style="margin-top:24px;text-align:center;line-height:1.7">
+      本地优先 · 断网可打卡<br>
+      <span id="verTxt" style="color:var(--muted);font-size:11.5px">v2</span>
+    </p>
+  </section>
+
+</div>
+
+<nav class="tabbar">
+  <div class="tabbar-inner">
+    <button class="tab on" data-view="today">
+      <svg viewBox="0 0 24 24"><path d="M12 3v9l5 3"/><circle cx="12" cy="12" r="9"/></svg>
+      <span>今日</span>
+    </button>
+    <button class="tab" data-view="review">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>
+      <span>回顾</span>
+    </button>
+    <button class="tab" data-view="settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .32 1.77l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.6 1.6 0 0 0-1.77-.32 1.6 1.6 0 0 0-.97 1.47V21a2 2 0 1 1-4 0v-.11a1.6 1.6 0 0 0-1.05-1.46 1.6 1.6 0 0 0-1.77.32l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.6 1.6 0 0 0 4.6 15a1.6 1.6 0 0 0-1.47-.97H3a2 2 0 1 1 0-4h.11A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.32-1.77l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.6 1.6 0 0 0 9 4.6h.09A1.6 1.6 0 0 0 10 3.13V3a2 2 0 1 1 4 0v.11a1.6 1.6 0 0 0 .97 1.47 1.6 1.6 0 0 0 1.77-.32l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.6 1.6 0 0 0 19.4 9v.09a1.6 1.6 0 0 0 1.47.97H21a2 2 0 1 1 0 4h-.11a1.6 1.6 0 0 0-1.47.97z"/></svg>
+      <span>设置</span>
+    </button>
+  </div>
+</nav>
+
+<div class="mask" id="mask" hidden>
+  <div class="sheet">
+    <h3 id="sheetTitle">编辑</h3>
+    <p class="sd" id="sheetSub">—</p>
+    <div class="f">
+      <label for="sheetWords">当天背了多少词</label>
+      <input type="number" id="sheetWords" min="0" step="10" inputmode="numeric" placeholder="0">
+    </div>
+    <label class="chk"><input type="checkbox" id="sheetManual"> 当天有其他学习（语法 / 听力 / 阅读）</label>
+    <div class="sheet-actions">
+      <button class="btn" id="sheetCancel">取消</button>
+      <button class="btn primary" id="sheetSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="cfg.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

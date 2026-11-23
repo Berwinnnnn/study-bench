@@ -70,6 +70,10 @@
 html{
   background-color:var(--bg); color:var(--ink); color-scheme:light;
   transition:background-color .28s ease,color .28s ease;
+  /* 打卡震动时整块屏幕会位移 ±50px，视口边缘会露出画布。
+     这一圈外扩的底色把露出的部分补上，看起来是「屏幕在动」而不是「内容在框里滑」。
+     只在震动期间需要，但常驻也没有代价：外扩部分本来就在视口之外。 */
+  box-shadow:0 0 0 80px var(--bg);
 }
 /* 兜底裁切必须写在 body 上：html 的 overflow 会传播到视口，
    而视口本身不被裁（只会出现横向滚动条），起不到限制作用。

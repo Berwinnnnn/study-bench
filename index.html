@@ -93,6 +93,17 @@ h2{font-size:14px;font-weight:600;margin:0;letter-spacing:.02em}
   font-size:12.5px;cursor:pointer;border-bottom:1px dashed #D8DDD8}
 .rowlinks button:active{color:var(--green-d)}
 
+/* 今日页的已掌握小条 */
+.learnrow{margin-top:12px;padding:10px 12px;border-radius:12px;background:#FAFAF7;
+  border:1px solid #F1F0EB;cursor:pointer;transition:background .15s,border-color .15s}
+.learnrow:active{background:var(--green-l);border-color:#DCEBE2}
+.learnrow-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+  font-size:12.5px;color:var(--ink2)}
+.learnrow-top b{color:var(--ink);font-weight:600;font-size:14px;font-variant-numeric:tabular-nums}
+.learnrow-tip{font-size:11px;color:var(--muted);flex:none}
+.bar-sm{height:6px;margin-top:8px}
+.bar-sm>i{background:linear-gradient(90deg,#9ACFB4,#4E9C78)}
+
 /* 待办 */
 .todo{display:flex;align-items:flex-start;gap:11px;padding:11px 0;border-bottom:1px solid #F4F3EF;cursor:pointer}
 .todo:last-of-type{border-bottom:0}
@@ -254,6 +265,14 @@ h2{font-size:14px;font-weight:600;margin:0;letter-spacing:.02em}
         <button id="undoBtn">记错了，退回</button>
       </div>
 
+      <div id="learnRow" class="learnrow">
+        <div class="learnrow-top">
+          <span>已掌握 <b id="learnNum">0</b> / <span id="learnGoal">3,597</span></span>
+          <span class="learnrow-tip">点这里更新</span>
+        </div>
+        <div class="bar bar-sm"><i id="learnBar"></i></div>
+      </div>
+
       <div id="todoList" style="margin-top:6px"></div>
 
       <div class="add">
@@ -297,8 +316,8 @@ h2{font-size:14px;font-weight:600;margin:0;letter-spacing:.02em}
       <div class="card-h"><h2>四级词汇进度</h2><span class="pill" id="pctPill">0%</span></div>
       <div style="margin-top:12px">
         <div class="prog-line">
-          <span>已背 <b id="pgDone">0</b> / <span id="pgGoal">4500</span></span>
-          <span id="pgLeft">剩 4500</span>
+          <span>已掌握 <b id="pgDone">0</b> / <span id="pgGoal">3,597</span></span>
+          <span id="pgLeft">剩 3597</span>
         </div>
         <div class="bar"><i id="pgBar"></i></div>
       </div>
@@ -306,7 +325,7 @@ h2{font-size:14px;font-weight:600;margin:0;letter-spacing:.02em}
     </div>
 
     <div class="card">
-      <div class="card-h"><h2>打卡记录</h2><span class="pill">近 18 周</span></div>
+      <div class="card-h"><h2>打卡记录</h2><span class="pill" id="hmWeeks">近 18 周</span></div>
       <div class="hm" id="heatmap"></div>
       <div class="hm-legend">
         <span>少</span>
@@ -330,14 +349,19 @@ h2{font-size:14px;font-weight:600;margin:0;letter-spacing:.02em}
     <p class="sec-title">目标</p>
     <div class="card">
       <div class="field">
-        <label for="goalInput">四级词汇总量</label>
-        <input type="number" id="goalInput" min="100" step="100" value="4500">
-        <p class="sub-note">四级大纲约 4500 词（含派生）。只影响进度条，不动已有记录。</p>
+        <label for="goalInput">词书总词数</label>
+        <input type="number" id="goalInput" min="100" step="1" value="3597">
+        <p class="sub-note">我这本书是 3597 词。换书了改这里，只影响进度条。</p>
       </div>
       <div class="field">
-        <label for="targetInput">每日目标词数</label>
+        <label for="learnedInput">已掌握词数</label>
+        <input type="number" id="learnedInput" min="0" step="1" value="0">
+        <p class="sub-note">照你背单词 app 里的「已掌握」填。进度和预测都按这个数算，每日打卡时会顺便让你更新。</p>
+      </div>
+      <div class="field">
+        <label for="targetInput">每日新学目标</label>
         <input type="number" id="targetInput" min="1" step="10" value="50">
-        <p class="sub-note">只用于顶部提示，不达标不罚你。</p>
+        <p class="sub-note">只用于提示和初期估算，不达标不罚你。</p>
       </div>
     </div>
 
@@ -409,6 +433,11 @@ h2{font-size:14px;font-weight:600;margin:0;letter-spacing:.02em}
     <div class="f">
       <label for="sheetWords">当天背了多少词</label>
       <input type="number" id="sheetWords" min="0" step="10" inputmode="numeric" placeholder="0">
+    </div>
+    <div class="f" id="sheetLearnWrap">
+      <label for="sheetLearn">现在一共掌握多少词（<span id="sheetLearnTotal">3,597</span> 里）</label>
+      <input type="number" id="sheetLearn" min="0" step="1" inputmode="numeric" placeholder="0">
+      <p class="hint" style="margin-top:6px">照 app 里的「已掌握」填，用来算总进度。不想改就保持原样。</p>
     </div>
     <label class="chk"><input type="checkbox" id="sheetManual"> 当天有其他学习（语法 / 听力 / 阅读）</label>
     <div class="sheet-actions">

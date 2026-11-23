@@ -1,6 +1,6 @@
 /* 离线缓存：第一次打开后，断网 / 代理失效也能打开并打卡 */
-var CACHE = 'studybench-v4';
-var ASSETS = ['./', './index.html', './app.js', './manifest.webmanifest', './icon.svg'];
+var CACHE = 'studybench-v7';
+var ASSETS = ['./', './index.html', './app.js', './themes.js', './fx.js', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(

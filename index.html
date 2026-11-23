@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-s="s01">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -11,445 +11,691 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
+<script>
+/* 防闪色：首帧前先把上次用过的主题挂上 <html data-s>。
+   此时 themes.js 还没加载，所以下面的 <style> 里内联了 21 套最关键的
+   四个色（约 1.5KB），只负责「不白闪一下」；完整主题样式由 app.js
+   加载后覆盖上来。两处用的是同一份数据，颜色不会不一致。 */
+(function () {
+  try {
+    var raw = localStorage.getItem('studybench.v2');
+    if (!raw) return;
+    var t = (JSON.parse(raw).config || {}).theme;
+    if (t && /^s\d{2}$/.test(t)) document.documentElement.setAttribute('data-s', t);
+  } catch (e) { }
+})();
+</script>
 <style>
+/* ── 首帧保底色：21 套主题的最小变量集（完整版在 themes.js） ── */
+  html[data-s="s01"]{--bg:#141414;--sur:#1E1E1E;--ink:#F5F5F0;--line:#2E2E2E}
+  html[data-s="s02"]{--bg:#FFFDF6;--sur:#FFFFFF;--ink:#141414;--line:#141414}
+  html[data-s="s03"]{--bg:#FFFFFF;--sur:#FFF9F2;--ink:#101010;--line:#101010}
+  html[data-s="s04"]{--bg:#FBF7F0;--sur:#FFFFFF;--ink:#1B1B1B;--line:#E3DCD0}
+  html[data-s="s05"]{--bg:#F4F1FB;--sur:#FFFFFF;--ink:#3A3357;--line:#E7E2F5}
+  html[data-s="s06"]{--bg:#FDF6FA;--sur:#FFFFFF;--ink:#4A3550;--line:#F3E4EF}
+  html[data-s="s07"]{--bg:#151515;--sur:#1F1F1F;--ink:#F0F0EC;--line:#303030}
+  html[data-s="s08"]{--bg:#0E0D14;--sur:#17151F;--ink:#EFE9DA;--line:#26232F}
+  html[data-s="s09"]{--bg:#F6F7EE;--sur:#FDFEF7;--ink:#2F3A2A;--line:#E2E7D6}
+  html[data-s="s10"]{--bg:#FFFCF7;--sur:#FFFFFF;--ink:#42353B;--line:#F2E6E4}
+  html[data-s="s11"]{--bg:#FFFDFB;--sur:#FFFFFF;--ink:#1A1420;--line:#F0E8F5}
+  html[data-s="s12"]{--bg:#FFFDF7;--sur:#FFFFFF;--ink:#1F1F1F;--line:#1F1F1F}
+  html[data-s="s13"]{--bg:#FBF6F0;--sur:#FFFFFF;--ink:#332B26;--line:#EDE2D6}
+  html[data-s="s14"]{--bg:#FDFCFA;--sur:#FFFFFF;--ink:#252322;--line:#EDEAE4}
+  html[data-s="s15"]{--bg:#FCFAF2;--sur:#FFFFFF;--ink:#3B3628;--line:#EDE7D6}
+  html[data-s="s16"]{--bg:#17130F;--sur:#201A15;--ink:#EDE3D2;--line:#2D261F}
+  html[data-s="s17"]{--bg:#F5FAF7;--sur:#FFFFFF;--ink:#24403A;--line:#DFEDE6}
+  html[data-s="s18"]{--bg:#FFFBF3;--sur:#FFFFFF;--ink:#4A3B2C;--line:#F5EADA}
+  html[data-s="s19"]{--bg:#1A0F12;--sur:#241418;--ink:#F0E2D4;--line:#3A2228}
+  html[data-s="s20"]{--bg:#F7F6F3;--sur:#FFFFFF;--ink:#33383D;--line:#E7E5E0}
+  html[data-s="s21"]{--bg:#FDFBF8;--sur:#FFFFFF;--ink:#1C1A19;--line:#EDE7E0}
+/* ─────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════
+   基线：所有颜色 / 字体 / 圆角 / 投影都由主题变量决定。
+   切主题只改 <html data-s>，这下面的数值一个都不用动。
+   ══════════════════════════════════════════════════════════ */
 :root{
-  --bg:#F7F6F2; --card:#FFFFFF; --ink:#1E2320; --ink2:#5C6660; --muted:#98A09B;
-  --line:#EAE8E2; --green:#3D8B68; --green-d:#2F6E52; --green-l:#E9F3ED;
-  --amber:#C98A2E; --amber-l:#FBF0DE; --red:#B23B3B; --red-l:#FBF1F1;
-  --r:18px;
-  --sh:0 1px 2px rgba(30,35,32,.04), 0 8px 24px -14px rgba(30,35,32,.16);
+  --bg:#F7F6F2; --sur:#FFFFFF; --ink:#1E2320; --ink2:#5C6660; --mut:#98A09B;
+  --line:#EAE8E2; --ac:#3D8B68; --acd:#2F6E52; --acl:#E9F3ED; --alt:#C98A2E;
+  --onac:#FFFFFF;
+  --fam:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  --num:ui-monospace,Menlo,Consolas,monospace;
+  --nwt:700; --nlsp:-.03em;
+  --r:18px; --bd:1px solid var(--line); --sh:none; --br:14px;
+  --bbd:0; --bsh:none; --pill:20px; --ckr:50%; --std:none;
+  --nfs:60px; --bls:.02em;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;padding:0}
+/* 主题变量挂在 <html data-s> 上，所以底色/字色写在 html 这一层；
+   body 只继承，不再自己取 var()，避免出现两处取值时机不一致。 */
+html{
+  background-color:var(--bg); color:var(--ink); color-scheme:light;
+  transition:background-color .28s ease,color .28s ease;
+}
+/* 兜底裁切必须写在 body 上：html 的 overflow 会传播到视口，
+   而视口本身不被裁（只会出现横向滚动条），起不到限制作用。
+   body 上裁切后，#view-* 内因主题负位移 / skew 探出的装饰不再撑宽文档，
+   window.innerWidth 保持 390，弹窗与底栏的 100% 才不会被污染。 */
+html,body{margin:0;padding:0;height:100%}
 body{
-  background:var(--bg); color:var(--ink);
-  font:15px/1.6 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
-  -webkit-font-smoothing:antialiased; overscroll-behavior-y:none;
+  background-color:transparent; color:inherit;
+  font-family:var(--fam);
+  -webkit-font-smoothing:antialiased;
+  overscroll-behavior-y:none;
+  overflow-x:clip;
 }
-.app{max-width:520px;margin:0 auto;min-height:100vh;min-height:100dvh;padding:0 16px 96px;position:relative}
+[hidden]{display:none!important}
+button,input,select{font-family:inherit}
 
-.topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 2px 6px;gap:10px}
-.brand{font-size:12.5px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase;flex:none}
-.sync{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--ink2);
-  background:#F0EFEA;border:0;border-radius:20px;padding:5px 10px;cursor:pointer;font-family:inherit;
-  transition:background .2s,color .2s;white-space:nowrap;max-width:56vw;overflow:hidden}
-.sync .dot{width:6px;height:6px;border-radius:50%;background:var(--muted);flex:none;transition:background .2s}
-.sync.ok{background:var(--green-l);color:var(--green-d)} .sync.ok .dot{background:var(--green)}
-.sync.warn{background:var(--amber-l);color:#7A5320} .sync.warn .dot{background:var(--amber)}
-.sync.err{background:var(--red-l);color:var(--red)} .sync.err .dot{background:var(--red)}
-.sync.busy .dot{animation:pulse 1s ease-in-out infinite}
-@keyframes pulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}}
-
-.card{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);padding:18px;margin-top:14px}
-.card-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:10px}
-h2{font-size:14px;font-weight:600;margin:0;letter-spacing:.02em}
-.pill{font-size:11.5px;color:var(--ink2);background:#F3F2EE;border-radius:20px;padding:3px 10px;white-space:nowrap}
-.pill.on{background:var(--green-l);color:var(--green-d)}
-
-/* Hero */
-.hero{padding:20px 18px 18px}
-.hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
-.date{font-size:12.5px;color:var(--muted);margin:0 0 4px}
-.hero-title{font-size:21px;font-weight:600;margin:0;letter-spacing:-.01em;line-height:1.3}
-.streak{text-align:right;flex:none}
-.streak-num{display:block;font-size:27px;font-weight:600;line-height:1;color:var(--green-d);
-  font-variant-numeric:tabular-nums;transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
-.streak-num.bump{transform:scale(1.2)}
-.streak-lbl{font-size:11px;color:var(--muted);letter-spacing:.06em}
-.checkin{
-  width:100%;margin-top:16px;border:0;border-radius:14px;padding:15px;cursor:pointer;
-  background:var(--green);color:#fff;font-size:15px;font-weight:600;letter-spacing:.02em;
-  display:flex;align-items:center;justify-content:center;gap:8px;
-  transition:transform .12s,background .2s;font-family:inherit;
+/* ───────── 页面骨架 ───────── */
+.app{
+  max-width:430px;margin:0 auto;min-height:100vh;min-height:100dvh;
+  display:flex;flex-direction:column;position:relative;
+  /* 给固定底部切换栏留位，避免遮住打卡按钮 */
+  padding-bottom:calc(64px + env(safe-area-inset-bottom));
 }
-.checkin:active{transform:scale(.985)}
-.checkin.done{background:var(--green-l);color:var(--green-d)}
-.checkin .ico{width:18px;height:18px;border-radius:50%;border:1.6px solid currentColor;
-  display:grid;place-items:center;font-size:11px;line-height:1;flex:none;transition:.2s}
-.checkin.done .ico{background:var(--green);border-color:var(--green);color:#fff}
-.hint{font-size:12px;color:var(--muted);margin:10px 0 0;line-height:1.6}
+.view{flex:1;display:flex;flex-direction:column;padding:0 18px;
+  overflow-y:auto;overflow-x:hidden;min-height:0;
+  -webkit-overflow-scrolling:touch}
+.view[hidden]{display:none}
+/* 三屏都锁成可视区高度。主题的硬投影 / 旋转会让元素外接矩形变大，
+   不锁高则 flex 会被反复撑开（s02 曾因此把打卡按钮顶进 tabbar）。
+   锁高 + 内部滚动：内容真的超高时能滚动，不会把按钮裁掉。 */
+#view-today,#view-review,#view-settings{
+  height:calc(100dvh - 64px - env(safe-area-inset-bottom));
+  max-height:calc(100dvh - 64px - env(safe-area-inset-bottom));
+  padding-bottom:6px}
+/* 打卡按钮若被主题加了旋转（如 s02 的 -1.2deg），外接矩形会比布局盒多出约 2px。
+   给按钮一个 fixed 高度的壳，旋转被限制在壳内，不会顶到 tabbar。 */
+#view-today .pbtn{position:relative}
 
-/* 单词行 */
-.wordrow{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;
-  padding:2px 0 14px;border-bottom:1px solid #F4F3EF}
-.wordrow-main{min-width:0}
-.word-label{font-size:14px;font-weight:500;display:flex;align-items:center;gap:7px}
-.word-label .ck{width:17px;height:17px;border-radius:5px;border:1.6px solid #D5D9D5;
-  flex:none;display:grid;place-items:center;font-size:10px;color:transparent;transition:.15s}
-.word-label.done .ck{background:var(--green);border-color:var(--green);color:#fff}
-.word-label.done{color:var(--muted)}
-.bignum{display:flex;align-items:baseline;gap:5px;margin-top:6px}
-.bignum b{font-size:38px;font-weight:600;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums}
-.bignum i{font-size:12.5px;color:var(--muted);font-style:normal}
-.quick{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;flex:1;max-width:180px}
-.quick button{
-  border:1px solid var(--line);background:#FCFCFA;color:var(--ink);border-radius:10px;
-  padding:10px 0;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit;
-  transition:background .15s,transform .1s,border-color .15s;
+/* 底部切换栏：中性控件，三屏共用，不随主题变形 */
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;
+  width:min(100%,430px);max-width:100%;margin:0 auto;
+  background:color-mix(in srgb,var(--bg) 94%,transparent);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border-top:1px solid var(--line);
+  padding:8px 0 calc(8px + env(safe-area-inset-bottom))}
+.tab{flex:1;border:0;background:none;padding:4px 0;cursor:pointer;font-family:inherit;
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  color:var(--mut);font-size:10.5px;letter-spacing:.04em;transition:color .15s}
+.tab svg{width:21px;height:21px;stroke:currentColor;fill:none;
+  stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.tab.on{color:var(--acd)}
+
+/* 状态栏 */
+.pbar{display:flex;justify-content:space-between;align-items:center;
+  padding:calc(10px + env(safe-area-inset-top)) 2px 0;
+  font-family:var(--num);font-size:12px;font-weight:600;
+  opacity:.45;letter-spacing:.04em;flex:none}
+.ptop{display:flex;justify-content:space-between;align-items:baseline;margin-top:19px;flex:none}
+.pdate{font-size:13px;font-weight:600;letter-spacing:.02em;color:var(--ink2)}
+.psync{font-family:var(--num);font-size:10.5px;font-weight:600;color:var(--mut);
+  letter-spacing:.06em;background:none;border:0;padding:0;cursor:pointer}
+
+/* 主视觉：小标签 + 大数字 + 天数胶囊 */
+.phero{margin-top:16px;position:relative;display:flex;flex-direction:column;
+  align-items:flex-start;flex:none}
+.plab{display:block;font-size:13px;color:var(--mut);letter-spacing:.06em}
+.pnum{display:block;font-family:var(--num);font-size:var(--nfs,60px);
+  font-weight:var(--nwt,700);line-height:.98;letter-spacing:var(--nlsp,-.03em);margin-top:1px;
+  font-variant-numeric:tabular-nums}
+.pnum i{font-style:normal;font-size:.28em;font-weight:600;margin-left:5px;
+  letter-spacing:0;opacity:.6}
+.pstk{display:inline-block;margin-top:9px;font-size:12.5px;font-weight:700;
+  color:var(--acd);background:var(--acl);padding:4px 11px;border-radius:var(--pill,20px)}
+
+/* 快捷加词：贴主视觉右下，绝对定位不占纵向空间。
+   hero 若是右对齐竖排（align-items:flex-end，如 s07/s14），徽章和快捷组
+   会抢同一行右侧而叠字。此时给 hero 补一段底部内距，让快捷组落在
+   徽章下方，同时不越出 hero 进入周柱状图。 */
+.pquick{position:absolute;right:0;bottom:0;z-index:2;
+  display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.phero.fend{padding-bottom:44px}
+.phero.fend .pquick{bottom:0}
+.pq{display:flex;gap:4px}
+.pq span{font-family:var(--num);font-size:11px;font-weight:700;line-height:1;
+  padding:5px 7px;border-radius:5px;background:var(--acl);color:var(--acd);
+  border:0;cursor:pointer;transition:transform .1s}
+.pq span:active{transform:scale(.92)}
+.plk{display:flex;gap:8px;font-size:10px;color:var(--mut);letter-spacing:.02em;line-height:1}
+.plk span{border-bottom:1px solid currentColor;padding-bottom:1px;cursor:pointer}
+.pquick.left{left:0;right:auto;align-items:flex-start}
+
+/* 一周柱状 */
+.pweek{display:flex;align-items:flex-end;gap:6px;height:50px;margin-top:19px;flex:none}
+.pweek i{flex:1;display:flex;align-items:flex-end;justify-content:center;
+  height:100%;position:relative;min-width:0}
+.pweek i b{display:block;width:100%;height:var(--hp,50%);border-radius:4px;
+  background:var(--ac);opacity:.26;box-sizing:border-box;min-height:3px}
+/* 完全没数据时，7 根柱退成一条基线，下面补一行说明 */
+.pweek[data-empty="1"] i b{opacity:.14;height:3px!important}
+.pweek[data-empty="1"] i.on b{opacity:.22}
+.pweek-tip{display:none;font-size:11.5px;color:var(--mut);letter-spacing:.02em;
+  margin-top:11px;text-align:center;line-height:1.4}
+
+/* 待办列表 */
+.plist{margin-top:19px;display:flex;flex-direction:column;gap:7px;flex:none}
+.pit{display:flex;align-items:center;gap:10px;padding:10px 12px;
+  border-radius:var(--r,12px);border:var(--bd,1px solid var(--line));
+  background:var(--sur);font-size:14px;box-shadow:var(--sh,none);cursor:pointer;
+  transition:opacity .15s}
+.pck{flex:none;width:18px;height:18px;border-radius:var(--ckr,50%);
+  border:1.5px solid var(--mut);display:grid;place-items:center;
+  font-size:11px;color:transparent;line-height:1}
+.pck::before{content:var(--cktick,"✓")}
+.pit.on .pck{background:var(--ac);border-color:var(--ac);color:var(--onac,#fff)}
+.ptt{flex:1;font-weight:600;letter-spacing:.01em;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ptg{font-family:var(--num);font-size:11px;color:var(--mut);letter-spacing:.04em;flex:none}
+.pit.on .ptt{opacity:.6;text-decoration:var(--std,none);text-decoration-thickness:1px}
+.plt-empty{font-size:13px;color:var(--mut);line-height:1.6;margin:14px 0 0}
+
+/* 待办添加条 */
+.padd{display:flex;align-items:center;gap:5px;margin-top:4px;position:relative;flex:none}
+.padd-i{flex:1;min-width:0;font-size:13px;padding:9px 10px;border-radius:var(--r,10px);
+  border:1px dashed var(--line);color:var(--mut);letter-spacing:.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  background:transparent;outline:none}
+.padd-i:focus{border-color:var(--ac);color:var(--ink)}
+.padd-i::placeholder{color:var(--mut)}
+.padd-s{flex:none;font-size:12px;padding:9px 6px;border-radius:var(--r,10px);
+  border:1px solid var(--line);color:var(--ink2);letter-spacing:.02em;white-space:nowrap;
+  background:none;cursor:pointer;transition:border-color .15s}
+.padd-s:active{border-color:var(--ac)}
+.padd-b{flex:none;width:32px;height:32px;border-radius:var(--br,10px);
+  background:var(--ac);color:var(--onac,#fff);display:grid;place-items:center;
+  font-family:var(--num);font-size:16px;font-weight:700;line-height:1;
+  border:0;cursor:pointer;transition:transform .1s}
+.padd-b:active{transform:scale(.93)}
+
+/* 重复规则浮层：向上展开，绝对定位不占纵向空间 */
+.prep{display:none;position:absolute;left:0;right:0;bottom:100%;margin-bottom:7px;z-index:20;
+  padding:12px 13px 13px;border-radius:12px;
+  border:1px solid var(--line);background:var(--sur);
+  box-shadow:0 -10px 28px -14px rgba(0,0,0,.55),0 4px 16px -10px rgba(0,0,0,.4)}
+.padd.open .prep{display:block}
+.prep-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+  font-size:11px;font-weight:700;letter-spacing:.14em;color:var(--mut);
+  text-transform:uppercase;margin-bottom:8px;line-height:1.2}
+.prep-h b{font-family:var(--num);font-size:12px;font-weight:700;letter-spacing:.02em;
+  color:var(--acd);text-transform:none;white-space:nowrap}
+.prep-seg{display:flex;gap:4px}
+.prep-seg span{flex:1;min-width:0;text-align:center;font-size:13px;font-weight:700;
+  padding:8px 0;border-radius:6px;border:1px solid var(--line);color:var(--ink2);
+  line-height:1.25;white-space:nowrap;cursor:pointer;transition:.12s}
+.prep-seg span.on{background:var(--ac);color:var(--onac,#fff);border-color:var(--ac)}
+.prep-sub{display:none;margin-top:9px;padding-top:9px;border-top:1px dashed var(--line)}
+.prep.mode-w .prep-sub.w,
+.prep.mode-m .prep-sub.m{display:block}
+.prep-wd{display:flex;gap:4px}
+.prep-wd span{flex:1;min-width:0;text-align:center;font-size:12px;font-weight:600;
+  padding:7px 0;border-radius:5px;border:1px solid var(--line);color:var(--ink2);
+  line-height:1.2;overflow:hidden;cursor:pointer;transition:.12s}
+.prep-wd span.on{background:var(--acl);color:var(--acd);border-color:var(--acd)}
+.prep-day{display:flex;align-items:center;justify-content:center;gap:9px}
+.prep-day em{flex:none;font-style:normal;width:32px;height:32px;border-radius:6px;
+  border:1px solid var(--line);display:grid;place-items:center;
+  font-family:var(--num);font-size:16px;color:var(--ink2);line-height:1;cursor:pointer}
+.prep-day em:active{background:var(--acl)}
+.prep-day u{flex:none;min-width:70px;text-decoration:none;display:flex;align-items:baseline;
+  justify-content:center;gap:4px}
+.prep-day b{font-family:var(--num);font-size:18px;font-weight:700;color:var(--ink);line-height:1}
+.prep-day i{font-style:normal;font-size:11px;color:var(--mut);letter-spacing:.04em}
+
+/* 进度 */
+.pprog{margin-top:16px;flex:none}
+.pr1{display:flex;justify-content:space-between;font-size:12px;color:var(--mut);margin-bottom:6px}
+.pr1 b{color:var(--ink);font-family:var(--num);font-weight:700;font-size:12.5px}
+.ptrack{height:7px;border-radius:7px;background:var(--line);overflow:hidden}
+.ptrack i{display:block;height:100%;border-radius:7px;background:var(--ac);
+  transition:width .5s cubic-bezier(.2,.8,.2,1)}
+
+/* 三栏统计 */
+.pstat{display:flex;margin-top:16px;padding-top:14px;
+  border-top:var(--bd,1px solid var(--line));flex:none}
+.pstat div{flex:1;text-align:center;position:relative;min-width:0}
+.pstat div+div::before{content:"";position:absolute;left:0;top:2px;bottom:2px;
+  width:1px;background:var(--line)}
+.pstat b{display:block;font-family:var(--num);font-size:18px;font-weight:700;
+  letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums}
+.pstat span{display:block;font-size:11px;color:var(--mut);margin-top:3px;letter-spacing:.04em}
+
+/* 打卡按钮 */
+.pbtn{margin-top:24px;margin-bottom:calc(18px + env(safe-area-inset-bottom));
+  text-align:center;font-size:15px;font-weight:800;padding:15px;
+  border-radius:var(--br,14px);background:var(--ac);color:var(--onac,#fff);
+  letter-spacing:var(--bls,.02em);box-shadow:var(--bsh,none);border:var(--bbd,0);
+  cursor:pointer;transition:transform .1s;flex:none}
+.pbtn:active{transform:scale(.985)}
+.pbtn.done{background:var(--acl);color:var(--acd);box-shadow:none}
+
+/* 高屏（≥760px）把富余的纵向空间均摊到各区段，避免全堆在打卡按钮上方 */
+@media(min-height:760px){
+  .phero{margin-top:30px;min-height:150px;justify-content:center}
+  .pweek{height:74px;margin-top:26px}
+  .plist{margin-top:26px;gap:9px;min-height:0;justify-content:flex-start}
+  .pit{padding:12px 13px}
+  .padd{margin-top:10px}
+  .padd-i,.padd-s{padding-top:11px;padding-bottom:11px}
+  .pprog{margin-top:24px}
+  .pstat{margin-top:24px;padding-top:20px}
+  .pbtn{margin-top:20px;padding:16px;
+    margin-bottom:calc(10px + env(safe-area-inset-bottom))}
+  .ptop{margin-top:24px}
 }
-.quick button:active{transform:scale(.94);background:var(--green-l);border-color:#CDE5D8}
-.rowlinks{display:flex;gap:14px;margin-top:11px;font-size:12.5px;color:var(--ink2)}
-.rowlinks button{background:none;border:0;padding:0;color:inherit;font-family:inherit;
-  font-size:12.5px;cursor:pointer;border-bottom:1px dashed #D8DDD8}
-.rowlinks button:active{color:var(--green-d)}
 
-/* 今日页的已掌握小条 */
-.learnrow{margin-top:12px;padding:10px 12px;border-radius:12px;background:#FAFAF7;
-  border:1px solid #F1F0EB;cursor:pointer;transition:background .15s,border-color .15s}
-.learnrow:active{background:var(--green-l);border-color:#DCEBE2}
-.learnrow-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;
-  font-size:12.5px;color:var(--ink2)}
-.learnrow-top b{color:var(--ink);font-weight:600;font-size:14px;font-variant-numeric:tabular-nums}
-.learnrow-tip{font-size:11px;color:var(--muted);flex:none}
-.bar-sm{height:6px;margin-top:8px}
-.bar-sm>i{background:linear-gradient(90deg,#9ACFB4,#4E9C78)}
+/* ───────── 回顾 / 设置：卡片 ───────── */
+.pcf{margin-top:10px;padding:9px 10px;border-radius:var(--r,12px);
+  border:var(--bd,1px solid var(--line));background:var(--sur);box-shadow:var(--sh,none)}
+.pcf-h{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+.pcf-t{font-size:12px;font-weight:700;letter-spacing:.02em}
+.ppill{font-size:10px;font-weight:700;padding:2px 7px;border-radius:var(--pill,20px);
+  background:var(--acl);color:var(--acd);white-space:nowrap;line-height:1.35}
+.pcf .pstat{margin-top:0;padding-top:0;border-top:0}
+.pgline{display:flex;justify-content:space-between;font-size:11px;color:var(--ink2);margin:3px 0 6px}
+.pgline b{color:var(--ink);font-family:var(--num);font-weight:700;margin-right:2px}
+.pgline b + span{margin-left:2px}
+.pfc{font-size:11px;line-height:1.6;color:var(--ink2);margin:6px 0 0}
+.pfc b{color:var(--acd);font-weight:700}
+.scr-review,.scr-set{justify-content:space-between;padding-bottom:calc(18px + env(safe-area-inset-bottom))}
 
-/* 待办 */
-.todo{display:flex;align-items:flex-start;gap:11px;padding:11px 0;border-bottom:1px solid #F4F3EF;cursor:pointer}
-.todo:last-of-type{border-bottom:0}
-.tick{width:19px;height:19px;border-radius:6px;border:1.6px solid #D5D9D5;flex:none;margin-top:2px;
-  display:grid;place-items:center;font-size:11px;color:transparent;transition:.15s}
-.todo.done .tick{background:var(--green);border-color:var(--green);color:#fff}
-.todo-body{flex:1;min-width:0}
-.todo-title{font-size:14.5px;line-height:1.45;word-break:break-word}
-.todo.done .todo-title{color:var(--muted);text-decoration:line-through;text-decoration-color:#C9CFCA}
-.todo-rule{font-size:11.5px;color:var(--muted);margin-top:1px}
-.todo-del{background:none;border:0;color:#D3D8D3;font-size:16px;cursor:pointer;padding:0 0 0 6px;line-height:1.2;flex:none}
-.todo-del:hover{color:var(--red)}
-.add{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
-.add-row{display:flex;gap:7px}
-.add input[type=text]{flex:1;min-width:0;border:1px solid var(--line);border-radius:10px;padding:9px 11px;
-  font-size:14px;font-family:inherit;background:#FCFCFA;color:var(--ink)}
-.add input:focus,select:focus{outline:none;border-color:var(--green);background:#fff}
-.add select{border:1px solid var(--line);border-radius:10px;padding:9px 6px;font-size:13px;
-  font-family:inherit;background:#FCFCFA;color:var(--ink2);flex:none}
-.add input[type=number]{width:58px;border:1px solid var(--line);border-radius:10px;padding:9px 6px;
-  font-size:13px;font-family:inherit;background:#FCFCFA;color:var(--ink2)}
-.add button{border:0;border-radius:10px;background:var(--ink);color:#fff;font-size:17px;width:40px;
-  cursor:pointer;font-family:inherit;line-height:1;flex:none}
-.sub{margin-top:7px;display:flex;gap:7px;align-items:center}
+/* 热力图 */
+.phm{display:flex;justify-content:space-between;margin-top:9px}
+.phm-c{display:flex;flex-direction:column;gap:4px;flex:none}
+.phm i,.phm button{display:block;width:13px;height:13px;border-radius:3px;
+  background:var(--line);flex:none;border:0;padding:0;cursor:pointer}
+.phm button.l1{background:color-mix(in srgb,var(--ac) 26%,var(--sur))}
+.phm button.l2{background:color-mix(in srgb,var(--ac) 50%,var(--sur))}
+.phm button.l3{background:color-mix(in srgb,var(--ac) 74%,var(--sur))}
+.phm button.l4{background:var(--ac)}
+.phm button.td{box-shadow:0 0 0 1px var(--sur),0 0 0 2px var(--acd)}
+.phl{display:flex;align-items:center;gap:4px;justify-content:flex-end;margin-top:4px;
+  font-size:10px;color:var(--mut)}
+.phl i{display:block;width:9px;height:9px;border-radius:2px}
 
-/* 回顾 */
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:2px}
-.stat-v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
-.stat-k{font-size:11.5px;color:var(--muted);margin-top:1px}
-.prog-line{display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink2);margin-bottom:7px}
-.prog-line b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
-.bar{height:9px;border-radius:9px;background:#F0EFEA;overflow:hidden}
-.bar>i{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,#7CBF9E,#3D8B68);
-  width:0;transition:width .6s cubic-bezier(.2,.8,.2,1)}
-.forecast{font-size:12.5px;color:var(--ink2);margin:11px 0 0;line-height:1.65}
-.forecast b{color:var(--green-d);font-weight:600}
-
-.hm{display:flex;gap:3px;margin-top:14px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
-.hm-col{display:flex;flex-direction:column;gap:3px;flex:none}
-.hm-cell{width:13px;height:13px;border-radius:3px;background:#EFEEE9;cursor:pointer;transition:transform .12s}
-.hm-cell:active{transform:scale(1.3)}
-.hm-cell.l1{background:#CBE6D7}.hm-cell.l2{background:#93CBAE}
-.hm-cell.l3{background:#57A87D}.hm-cell.l4{background:#2F7F58}
-.hm-cell.today{box-shadow:0 0 0 1.6px var(--card),0 0 0 3.2px var(--green-d)}
-.hm-legend{display:flex;align-items:center;gap:5px;justify-content:flex-end;margin-top:6px;font-size:11px;color:var(--muted)}
-.hm-legend i{width:10px;height:10px;border-radius:2.5px;display:block}
+/* 最近 7 天 */
+.pd7 div{display:flex;justify-content:space-between;font-size:11.5px;line-height:1.7;color:var(--ink2)}
+.pd7 div b{font-family:var(--num);font-weight:700;color:var(--ink)}
+.pd7 div b.dim{color:var(--mut);font-weight:400}
 
 /* 设置 */
-.field{margin-top:15px}
-.field:first-child{margin-top:0}
-.field label{display:block;font-size:12.5px;color:var(--ink2);margin-bottom:6px}
-.field input{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
-  font-size:14px;font-family:inherit;background:#FCFCFA;color:var(--ink)}
-.field .sub-note{font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.6}
-.btn-row{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
-.btn{flex:1;min-width:112px;border:1px solid var(--line);background:#FCFCFA;color:var(--ink);
-  border-radius:11px;padding:11px;font-size:13.5px;cursor:pointer;font-family:inherit;font-weight:500;
-  transition:background .15s;white-space:nowrap}
-.btn:hover{background:#F5F4EF}
-.btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
-.btn.primary:hover{background:#2C332E}
-.btn.danger{color:var(--red);border-color:#F0DCDC}
-.btn.danger:hover{background:var(--red-l)}
-.btn:disabled{opacity:.45;cursor:not-allowed}
-.sec-title{font-size:12px;letter-spacing:.1em;color:var(--muted);margin:24px 2px 0;text-transform:uppercase}
-.steps{font-size:12.5px;color:var(--ink2);line-height:1.75;padding-left:18px;margin:8px 0 0}
-.steps li{margin-bottom:5px}
-.steps a{color:var(--green-d)}
+.pst{font-size:10.5px;font-weight:700;letter-spacing:.16em;color:var(--mut);
+  text-transform:uppercase;margin:12px 2px 0;line-height:1.5}
+.pfl{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:3px 0;min-height:34px}
+.pfl label{font-size:12.5px;color:var(--ink2);min-width:0;line-height:1.45}
+.pin{flex:none;min-width:58px;text-align:center;font-family:var(--num);font-size:12.5px;
+  font-weight:700;padding:4px 8px;border-radius:5px;border:1px solid var(--line);
+  background:var(--bg);color:var(--ink);line-height:1.4;
+  outline:none;-webkit-appearance:none;appearance:none;
+  /* 主题会把边框改成"只有下划线"，这里保证文字不会贴到线上 */
+  min-height:28px}
+.pin:focus{border-color:var(--ac)}
+input.pin{text-align:right;padding-top:5px;padding-bottom:5px}
+.pnote{font-size:10.5px;line-height:1.5;color:var(--mut);margin:4px 0 0;font-style:normal}
+.pbr{display:flex;gap:5px;margin-top:6px}
+.pbt{flex:1;text-align:center;font-size:11.5px;font-weight:700;padding:8px 4px;
+  white-space:nowrap;border-radius:6px;border:1px solid var(--line);background:var(--bg);
+  color:var(--ink);line-height:1.35;cursor:pointer;transition:.12s}
+.pbt:active{transform:scale(.97)}
+.pbt.pri{background:var(--ac);color:var(--onac);border-color:var(--ac)}
+.pbt.dgr{color:#B23B3B;border-color:#F0DCDC;background:transparent}
 
-/* Tabbar */
-.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:40;background:rgba(247,246,242,.92);
-  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line);
-  display:flex;padding:8px 0 max(10px,env(safe-area-inset-bottom))}
-.tabbar-inner{display:flex;width:100%;max-width:520px;margin:0 auto}
-.tab{flex:1;border:0;background:none;padding:4px 0;cursor:pointer;font-family:inherit;
-  display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--muted);
-  font-size:10.5px;letter-spacing:.04em;transition:color .15s}
-.tab svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.tab.on{color:var(--green-d)}
+/* 设置：21 套主题选择 */
+.pth{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:5px}
+.pth i{display:block;height:22px;border-radius:4px;background:var(--tc);opacity:.42;
+  cursor:pointer;transition:.15s}
+.pth i.on{opacity:1;box-shadow:0 0 0 2px var(--sur),0 0 0 3.5px var(--tc)}
+.pthd{display:flex;justify-content:space-between;font-size:10.5px;color:var(--mut);margin-top:7px}
 
-/* Sheet */
-.mask{position:fixed;inset:0;background:rgba(30,35,32,.34);z-index:60;display:flex;
-  align-items:flex-end;justify-content:center;opacity:0;transition:opacity .2s}
-.mask.show{opacity:1}
-.sheet{background:var(--card);width:100%;max-width:520px;border-radius:20px 20px 0 0;
-  padding:20px 20px calc(20px + env(safe-area-inset-bottom));transform:translateY(18px);
-  transition:transform .24s cubic-bezier(.2,.8,.2,1)}
-.mask.show .sheet{transform:translateY(0)}
-.sheet h3{font-size:16px;margin:0 0 4px;font-weight:600}
-.sheet .sd{font-size:12.5px;color:var(--muted);margin:0 0 16px}
-.sheet .f{margin-bottom:14px}
-.sheet .f label{display:block;font-size:12.5px;color:var(--ink2);margin-bottom:6px}
-.sheet .f input{width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 12px;
-  font-size:16px;font-family:inherit;background:#FCFCFA}
-.chk{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--ink);cursor:pointer}
-.chk input{width:17px;height:17px;accent-color:var(--green)}
-.sheet-actions{display:flex;gap:8px;margin-top:20px}
+/* ───────── 弹窗 ─────────
+   宽度用 min(100%,430px)：left/right:0 + max-width 在某些主题下会被
+   主题的 padding/边框推出视口，进而把 window.innerWidth 撑大，
+   形成「越宽→更宽」的正反馈。用 min() 直接锁死上限，不再依赖 auto 边距。 */
+.pmask{display:none;position:fixed;inset:0;z-index:60;background:rgba(14,14,14,.44);
+  opacity:0;transition:opacity .2s}
+.pmask.show{display:block;opacity:1}
+.psheet{position:fixed;left:0;right:0;bottom:0;z-index:61;
+  width:min(100%,430px);max-width:100%;margin:0 auto;
+  padding:20px 20px calc(20px + env(safe-area-inset-bottom));
+  background:var(--sur);border-radius:20px 20px 0 0;
+  box-shadow:0 -16px 40px -18px rgba(0,0,0,.55);
+  transform:translateY(100%);transition:transform .26s cubic-bezier(.2,.8,.2,1)}
+.psheet.show{transform:translateY(0)}
+.psh-t{font-size:17px;font-weight:700;letter-spacing:.01em}
+.psh-s{font-size:12px;color:var(--mut);margin:3px 0 14px}
+.pfld{margin-bottom:12px}
+.pfld label{display:block;font-size:12px;color:var(--ink2);margin-bottom:5px}
+/* 输入框撑满时不能再叠加左右 padding 变量，否则在 border-box 下会溢出容器 */
+.pin.pbig{display:block;width:100%;min-width:0;max-width:100%;text-align:left;
+  font-size:17px;padding:9px 12px}
+.psh-h{font-size:11px;line-height:1.55;color:var(--mut);margin:4px 0 14px}
+.pchk{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--ink);
+  line-height:1.4;cursor:pointer}
+.pchk i{flex:none;width:18px;height:18px;border-radius:4px;border:1.5px solid var(--mut);
+  display:grid;place-items:center;font-size:11px;color:transparent;line-height:1}
+.pchk i.on{background:var(--ac);border-color:var(--ac);color:var(--onac,#fff)}
+.pchk span{flex:1;min-width:0}
+.pact{display:flex;gap:8px;margin-top:18px}
+.pact .pbt{padding:12px 6px;font-size:14px;border-radius:var(--br,12px)}
 
+/* 主题若给打卡按钮加了旋转 / 位移，外接矩形会超出布局盒，补一段底部余量防压顶栏 */
+#view-today .pbtn{will-change:transform}
+@supports (padding:max(0px)){
+  #view-today{padding-bottom:2px}
+}
+
+/* s02 的按钮带 -1.2deg 旋转，接上真机后外接矩形会顶到 tabbar 约 1.5px。
+   缩到 -.5deg：视觉上仍是歪的，溢出压到 0.6px 以内，落在安全区里。 */
+[data-s="s02"] #view-today .pbtn{transform:rotate(-.5deg)}
+
+/* 主题的装饰层（大圆环、光斑、水彩晕）用 ::before/::after 画在 .scr-today 上。
+   设计稿是 312px 画布，放大到 390 后位置整体偏移，会飘进顶部功能区压住
+   "日期 / 未连接"。统一压到内容之下，装饰只做背景，不再盖住任何文字。 */
+/* .scr-today 必须自己成为定位包含块：伪元素是 absolute，如果它们相对更外层
+   定位，right:-37.5px 这种负位移就会直接探出视口，把文档撑宽（s01 曾因此
+   多出 39px，进而把 fixed 弹窗的 100% 宽度也算成 429）。
+   这里显式给 position:relative + overflow 裁切，装饰只在画框内可见。 */
+.scr-today{position:relative}
+.scr-today::before,.scr-today::after{z-index:0}
+.scr-today > *{position:relative;z-index:1}
+/* 但 hero 区内的绝对定位子元素（快捷加词、重复浮层）要保持自己的层级 */
+.scr-today .phero,.scr-today .phero > *{z-index:auto}
+.scr-today .pquick{z-index:3}
+.scr-today .prep{z-index:20}
+
+/* 打卡动效层：铺满整屏、压在内容之上、不接收点击。
+   动效的坐标系是设计稿手机屏 312×548，由 fx.js 用 transform:scale
+   等比放大到真实屏宽（390/312 = 1.25），所以这里的尺寸只决定可裁切区域。 */
+.fxLayer{position:fixed;inset:0;z-index:45;overflow:hidden;pointer-events:none;
+  opacity:0;transition:opacity .12s}
+.fxLayer.on{opacity:1}
+.fxStage{position:absolute;left:0;top:0;width:312px;height:548px;
+  overflow:hidden;pointer-events:none;transform-origin:0 0}
+
+/* 提示条 */
 .toast{position:fixed;left:50%;bottom:100px;transform:translate(-50%,10px);z-index:80;
   background:rgba(30,35,32,.93);color:#fff;font-size:13px;padding:9px 16px;border-radius:20px;
   opacity:0;pointer-events:none;transition:.22s;white-space:nowrap;max-width:88vw;
   overflow:hidden;text-overflow:ellipsis}
 .toast.show{opacity:1;transform:translate(-50%,0)}
-[hidden]{display:none!important}
+
+/* 主题选择浮层（从设置底部按钮唤起） */
+.th-mask{display:none;position:fixed;inset:0;z-index:70;background:rgba(14,14,14,.5)}
+.th-mask.show{display:block}
+.th-panel{position:fixed;left:0;right:0;bottom:0;z-index:71;
+  width:min(100%,430px);max-width:100%;margin:0 auto;
+  background:var(--sur);border-radius:20px 20px 0 0;
+  padding:20px 20px calc(20px + env(safe-area-inset-bottom));
+  box-shadow:0 -16px 40px -18px rgba(0,0,0,.55);
+  transform:translateY(100%);transition:transform .26s cubic-bezier(.2,.8,.2,1);
+  max-height:82vh;overflow-y:auto}
+.th-panel.show{transform:translateY(0)}
+.th-h{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}
+.th-h b{font-size:17px;font-weight:700}
+.th-h span{font-size:12px;color:var(--mut)}
+.th-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.th-item{border:1px solid var(--line);border-radius:9px;padding:7px;cursor:pointer;
+  background:var(--bg);transition:.15s;position:relative;overflow:hidden}
+.th-item:active{transform:scale(.97)}
+.th-item.on{border-color:var(--ac);box-shadow:0 0 0 1.5px var(--ac)}
+.th-sw{display:flex;gap:2px;margin-bottom:5px}
+.th-sw i{flex:1;height:11px;border-radius:2px}
+.th-nm{font-size:10px;font-weight:700;line-height:1.25;color:var(--ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.th-no{font-family:var(--num);font-size:9px;color:var(--mut);margin-top:1px}
+.th-close{width:100%;margin-top:14px;padding:13px;border-radius:12px;
+  border:1px solid var(--line);background:var(--bg);color:var(--ink);
+  font-size:14px;font-weight:600;cursor:pointer}
+
+@media(max-width:380px){
+  .view{padding:0 14px}
+  .pnum{font-size:calc(var(--nfs,60px) * .88)}
+  .pweek{height:44px}
+  .pstat b{font-size:16px}
+}
+/* 极矮屏幕（老机型 568/667）压缩纵向节奏 */
+@media(max-height:700px){
+  .ptop{margin-top:14px}
+  .phero{margin-top:12px;min-height:0}
+  .pweek{height:34px;margin-top:13px}
+  .plist{margin-top:13px}
+  .pprog{margin-top:12px}
+  .pstat{margin-top:12px;padding-top:11px}
+  .pbtn{padding:13px;margin-top:14px}
+  .pnum{font-size:calc(var(--nfs,60px) * .82)}
+}
 </style>
 </head>
 <body>
+
 <div class="app">
 
-  <div class="topbar">
-    <span class="brand">Study Bench</span>
-    <button class="sync" id="syncBtn" title="点击手动同步">
-      <span class="dot"></span><span id="syncTxt">未连接</span>
-    </button>
-  </div>
+  <!-- ═══════════════ 今日 ═══════════════ -->
+  <section class="view scr-today" id="view-today">
 
-  <!-- ============ 今日 ============ -->
-  <section id="view-today">
-
-    <div class="card hero">
-      <div class="hero-top">
-        <div>
-          <p class="date" id="todayDate">—</p>
-          <h1 class="hero-title" id="heroTitle">今天还没开始</h1>
-        </div>
-        <div class="streak">
-          <span class="streak-num" id="streakNum">0</span>
-          <span class="streak-lbl">连续天</span>
-        </div>
-      </div>
-      <button class="checkin" id="checkinBtn">
-        <span class="ico" id="checkinIco"></span>
-        <span id="checkinTxt">打卡：今天学了</span>
-      </button>
-      <p class="hint">背单词、待办任一项完成就算这天有学习。周末只学语法也不会断连续。</p>
+    <div class="pbar"><span id="clock">9:41</span><span>●●●</span></div>
+    <div class="ptop">
+      <span class="pdate" id="todayDate">—</span>
+      <button class="psync" id="syncBtn">未连接</button>
     </div>
 
-    <div class="card">
-      <div class="card-h">
-        <h2>今日任务</h2>
-        <span class="pill" id="wordPill">目标 50 词</span>
+    <div class="phero">
+      <span class="plab" id="heroLabel">今天已背</span>
+      <span class="pnum"><span id="wordNum">0</span><i>词</i></span>
+      <span class="pstk" id="streakPill">连续 0 天</span>
+      <div class="pquick" id="quickBox">
+        <div class="pq">
+          <span data-add="20" role="button" tabindex="0">+20</span>
+          <span data-add="50" role="button" tabindex="0">+50</span>
+          <span data-add="100" role="button" tabindex="0">+100</span>
+        </div>
+        <div class="plk">
+          <span id="customBtn" role="button" tabindex="0">填准确数</span>
+          <span id="undoBtn" role="button" tabindex="0">记错了</span>
+        </div>
       </div>
+    </div>
 
-      <div class="wordrow">
-        <div class="wordrow-main">
-          <div class="word-label" id="wordLabel">
-            <span class="ck">✓</span><span>背四级单词</span>
+    <div class="pweek" id="pweek"></div>
+    <div class="pweek-tip" id="weekTip">近七天还没有记录</div>
+
+    <div class="plist" id="todoList"></div>
+
+    <div class="padd" id="paddBox">
+      <input class="padd-i" type="text" id="todoInput" placeholder="加一条，如：语法 30 分钟" maxlength="40">
+      <button class="padd-s" id="ruleBtn">每天 ▾</button>
+      <button class="padd-b" id="todoAdd" aria-label="添加">+</button>
+      <div class="prep mode-d" id="prep">
+        <div class="prep-h"><span>重复</span><b id="prepHint">每天</b></div>
+        <div class="prep-seg" id="prepSeg">
+          <span data-rule="daily" class="on">每天</span>
+          <span data-rule="weekly">每周</span>
+          <span data-rule="monthly">每月</span>
+        </div>
+        <div class="prep-sub w">
+          <div class="prep-wd" id="prepWd">
+            <span data-wd="1">一</span><span data-wd="2">二</span><span data-wd="3">三</span>
+            <span data-wd="4">四</span><span data-wd="5">五</span><span data-wd="6">六</span>
+            <span data-wd="0">日</span>
           </div>
-          <div class="bignum"><b id="wordNum">0</b><i>词 · 今天</i></div>
         </div>
-        <div class="quick">
-          <button data-add="20">+20</button>
-          <button data-add="50">+50</button>
-          <button data-add="100">+100</button>
-        </div>
-      </div>
-      <div class="rowlinks">
-        <button id="customBtn">填准确数</button>
-        <button id="undoBtn">记错了，退回</button>
-      </div>
-
-      <div id="learnRow" class="learnrow">
-        <div class="learnrow-top">
-          <span>已掌握 <b id="learnNum">0</b> / <span id="learnGoal">3,597</span></span>
-          <span class="learnrow-tip">点这里更新</span>
-        </div>
-        <div class="bar bar-sm"><i id="learnBar"></i></div>
-      </div>
-
-      <div id="todoList" style="margin-top:6px"></div>
-
-      <div class="add">
-        <div class="add-row">
-          <input type="text" id="todoInput" placeholder="加一条，如：语法 30 分钟" maxlength="40">
-          <select id="todoRule" aria-label="重复方式">
-            <option value="daily">每天</option>
-            <option value="weekly">每周</option>
-            <option value="monthly">每月</option>
-          </select>
-          <button id="todoAdd" aria-label="添加">+</button>
-        </div>
-        <div class="sub" id="subWeekly" hidden>
-          <select id="todoWeekday" aria-label="星期几">
-            <option value="1">周一</option><option value="2">周二</option><option value="3">周三</option>
-            <option value="4">周四</option><option value="5">周五</option><option value="6">周六</option>
-            <option value="0">周日</option>
-          </select>
-        </div>
-        <div class="sub" id="subMonthly" hidden>
-          <input type="number" id="todoDay" min="1" max="31" value="1" aria-label="几号">
-          <span style="font-size:12.5px;color:var(--muted)">号</span>
+        <div class="prep-sub m">
+          <div class="prep-day">
+            <em id="dayMinus">−</em>
+            <u><b id="prepDayNum">1</b><i>号</i></u>
+            <em id="dayPlus">+</em>
+          </div>
         </div>
       </div>
     </div>
+
+    <div class="pprog">
+      <div class="pr1"><span>已掌握</span><b id="learnTxt">0 / 3,597</b></div>
+      <div class="ptrack"><i id="learnBar" style="width:0%"></i></div>
+    </div>
+
+    <div class="pstat">
+      <div><b id="stStreak">0</b><span>连续天数</span></div>
+      <div><b id="stAvg">0</b><span>近七天均值</span></div>
+      <div><b id="stLeft">—</b><span>还需天数</span></div>
+    </div>
+
+    <button class="pbtn" id="checkinBtn">打卡</button>
 
   </section>
 
-  <!-- ============ 回顾 ============ -->
-  <section id="view-review" hidden>
+  <!-- ═══════════════ 回顾 ═══════════════ -->
+  <section class="view scr-review" id="view-review" hidden>
 
-    <div class="card">
-      <div class="stats">
-        <div class="stat"><div class="stat-v" id="stTotalWords">0</div><div class="stat-k">累计词数</div></div>
-        <div class="stat"><div class="stat-v" id="stDays">0</div><div class="stat-k">学习天数</div></div>
-        <div class="stat"><div class="stat-v" id="stAvg">0</div><div class="stat-k">近 7 日均</div></div>
+    <div class="pbar"><span>9:41</span><span>●●●</span></div>
+
+    <div class="pcf">
+      <div class="pstat">
+        <div><b id="rvTotal">0</b><span>累计词数</span></div>
+        <div><b id="rvDays">0</b><span>学习天数</span></div>
+        <div><b id="rvAvg">0</b><span>近 7 日均</span></div>
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-h"><h2>四级词汇进度</h2><span class="pill" id="pctPill">0%</span></div>
-      <div style="margin-top:12px">
-        <div class="prog-line">
-          <span>已掌握 <b id="pgDone">0</b> / <span id="pgGoal">3,597</span></span>
-          <span id="pgLeft">剩 3597</span>
-        </div>
-        <div class="bar"><i id="pgBar"></i></div>
-      </div>
-      <p class="forecast" id="forecast">还没有足够数据估算。</p>
+    <div class="pcf">
+      <div class="pcf-h"><span class="pcf-t">四级词汇进度</span><span class="ppill" id="rvPct">0%</span></div>
+      <div class="pgline"><span>已掌握 <b id="rvDone">0</b> / <span id="rvGoal">3,597</span></span><span id="rvLeft">剩 3,597</span></div>
+      <div class="ptrack"><i id="rvBar" style="width:0%"></i></div>
+      <p class="pfc" id="rvForecast">在你的 app 里看一眼「已掌握」多少，点下来填进来，这里就能算出还要多久。</p>
     </div>
 
-    <div class="card">
-      <div class="card-h"><h2>打卡记录</h2><span class="pill" id="hmWeeks">近 18 周</span></div>
-      <div class="hm" id="heatmap"></div>
-      <div class="hm-legend">
+    <div class="pcf">
+      <div class="pcf-h"><span class="pcf-t">打卡记录</span><span class="ppill" id="rvWeeks">近 18 周</span></div>
+      <div class="phm" id="heatmap"></div>
+      <div class="phl">
         <span>少</span>
-        <i style="background:#EFEEE9"></i><i style="background:#CBE6D7"></i>
-        <i style="background:#93CBAE"></i><i style="background:#57A87D"></i><i style="background:#2F7F58"></i>
-        <span>多</span>
+        <i style="background:var(--line)"></i>
+        <i class="l1" style="background:color-mix(in srgb,var(--ac) 26%,var(--sur))"></i>
+        <i class="l2" style="background:color-mix(in srgb,var(--ac) 50%,var(--sur))"></i>
+        <i class="l3" style="background:color-mix(in srgb,var(--ac) 74%,var(--sur))"></i>
+        <i style="background:var(--ac)"></i><span>多</span>
       </div>
-      <p class="hint">点任意格子可补录那一天的词数。</p>
     </div>
 
-    <div class="card">
-      <div class="card-h"><h2>最近 7 天</h2></div>
-      <div id="last7" style="font-size:13.5px;color:var(--ink2);line-height:2"></div>
+    <div class="pcf">
+      <div class="pcf-h"><span class="pcf-t">最近 7 天</span></div>
+      <div class="pd7" id="rvLast7"></div>
     </div>
 
   </section>
 
-  <!-- ============ 设置 ============ -->
-  <section id="view-settings" hidden>
+  <!-- ═══════════════ 设置 ═══════════════ -->
+  <section class="view scr-set" id="view-settings" hidden>
 
-    <p class="sec-title">目标</p>
-    <div class="card">
-      <div class="field">
-        <label for="goalInput">词书总词数</label>
-        <input type="number" id="goalInput" min="100" step="1" value="3597">
-        <p class="sub-note">我这本书是 3597 词。换书了改这里，只影响进度条。</p>
-      </div>
-      <div class="field">
-        <label for="learnedInput">已掌握词数</label>
-        <input type="number" id="learnedInput" min="0" step="1" value="0">
-        <p class="sub-note">照你背单词 app 里的「已掌握」填。进度和预测都按这个数算，每日打卡时会顺便让你更新。</p>
-      </div>
-      <div class="field">
-        <label for="targetInput">每日新学目标</label>
-        <input type="number" id="targetInput" min="1" step="10" value="50">
-        <p class="sub-note">只用于提示和初期估算，不达标不罚你。</p>
-      </div>
+    <div class="pbar"><span>9:41</span><span>●●●</span></div>
+
+    <div class="pst">目标</div>
+    <div class="pcf">
+      <div class="pfl"><label for="goalInput">词书总词数</label>
+        <input class="pin" type="number" id="goalInput" min="100" step="1" value="3597"></div>
+      <div class="pfl"><label for="learnedInput">已掌握词数</label>
+        <input class="pin" type="number" id="learnedInput" min="0" step="1" value="0"></div>
+      <div class="pfl"><label for="targetInput">每日新学目标</label>
+        <input class="pin" type="number" id="targetInput" min="1" step="10" value="50"></div>
     </div>
 
-    <p class="sec-title">云同步</p>
-    <div class="card">
-      <div class="field">
-        <label for="tokenInput">GitHub Token</label>
-        <input type="password" id="tokenInput" placeholder="github_pat_..." spellcheck="false" autocomplete="off">
-        <p class="sub-note" id="tokenNote">只保存在这台设备的浏览器里，不上传任何服务器。手机和电脑各填一次同一个 Token，就能共享记录。</p>
+    <div class="pst">云同步</div>
+    <div class="pcf">
+      <div class="pfl"><label for="tokenInput">GitHub Token</label>
+        <input class="pin" type="password" id="tokenInput" placeholder="github_pat_…"
+          spellcheck="false" autocomplete="off" style="min-width:104px"></div>
+      <div class="pfl"><label for="gistInput">Gist ID</label>
+        <input class="pin" type="text" id="gistInput" placeholder="a1b2c3…"
+          spellcheck="false" autocomplete="off" style="min-width:104px"></div>
+      <div class="pbr">
+        <button class="pbt pri" id="saveSync">保存并同步</button>
+        <button class="pbt" id="testSync">测试</button>
+        <button class="pbt" id="clearSync">断开</button>
       </div>
-      <details id="advBox" style="margin-top:2px">
-        <summary style="font-size:12px;color:var(--muted);cursor:pointer;outline:none">手动修改 Gist ID</summary>
-        <div class="field" style="margin-top:10px">
-          <input type="text" id="gistInput" placeholder="a1b2c3d4e5f6..." spellcheck="false" autocomplete="off">
-        </div>
-      </details>
-      <div class="btn-row">
-        <button class="btn primary" id="saveSync">保存并同步</button>
-        <button class="btn" id="testSync">测试连接</button>
-      </div>
-      <div class="btn-row">
-        <button class="btn" id="clearSync">断开同步</button>
-      </div>
-      <p class="sub-note" id="syncDetail">尚未配置。</p>
+      <p class="pnote" id="syncDetail">尚未配置。</p>
     </div>
 
-    <p class="sec-title">数据</p>
-    <div class="card">
-      <div class="btn-row">
-        <button class="btn primary" id="exportBtn">导出 JSON</button>
-        <button class="btn" id="importBtn">导入 JSON</button>
+    <div class="pst">数据</div>
+    <div class="pcf">
+      <div class="pbr">
+        <button class="pbt pri" id="exportBtn">导出 JSON</button>
+        <button class="pbt" id="importBtn">导入 JSON</button>
+        <button class="pbt dgr" id="clearBtn">清空本机</button>
       </div>
-      <div class="btn-row">
-        <button class="btn danger" id="clearBtn">清空本机数据</button>
-      </div>
-      <p class="sub-note">导出为完整数据文件（含待办规则与历史）。建议每月导一次存网盘。</p>
+      <p class="pnote">导出为完整数据文件（含待办规则与历史）。建议每月导一次存网盘。</p>
       <input type="file" id="fileInput" accept=".json,application/json" hidden>
     </div>
 
-    <p class="sub-note" style="margin-top:24px;text-align:center;line-height:1.7">
-      本地优先 · 断网可打卡<br>
-      <span id="verTxt" style="color:var(--muted);font-size:11.5px">v2</span>
-    </p>
+    <div class="pst">主题</div>
+    <div class="pcf">
+      <div class="pcf-h"><span class="pcf-t">21 套风格</span>
+        <span class="ppill">随数据同步</span></div>
+      <div class="pth" id="themeGrid"></div>
+      <div class="pthd"><span id="themeNow">当前 01</span><span>01 / 21</span></div>
+      <div class="pbr"><button class="pbt pri" id="themeBtn">换个风格</button></div>
+    </div>
+
+    <p class="pnote" style="text-align:center;margin:10px 0 0" id="verTxt">
+      本地优先 · 断网可打卡 · v3</p>
+
   </section>
 
 </div>
 
-<nav class="tabbar">
-  <div class="tabbar-inner">
-    <button class="tab on" data-view="today">
-      <svg viewBox="0 0 24 24"><path d="M12 3v9l5 3"/><circle cx="12" cy="12" r="9"/></svg>
-      <span>今日</span>
-    </button>
-    <button class="tab" data-view="review">
-      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>
-      <span>回顾</span>
-    </button>
-    <button class="tab" data-view="settings">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .32 1.77l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.6 1.6 0 0 0-1.77-.32 1.6 1.6 0 0 0-.97 1.47V21a2 2 0 1 1-4 0v-.11a1.6 1.6 0 0 0-1.05-1.46 1.6 1.6 0 0 0-1.77.32l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.6 1.6 0 0 0 4.6 15a1.6 1.6 0 0 0-1.47-.97H3a2 2 0 1 1 0-4h.11A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.32-1.77l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.6 1.6 0 0 0 9 4.6h.09A1.6 1.6 0 0 0 10 3.13V3a2 2 0 1 1 4 0v.11a1.6 1.6 0 0 0 .97 1.47 1.6 1.6 0 0 0 1.77-.32l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.6 1.6 0 0 0 19.4 9v.09a1.6 1.6 0 0 0 1.47.97H21a2 2 0 1 1 0 4h-.11a1.6 1.6 0 0 0-1.47.97z"/></svg>
-      <span>设置</span>
-    </button>
+<!-- 弹窗：改某天的记录 -->
+<div class="pmask" id="mask"></div>
+<div class="psheet" id="sheet">
+  <div class="psh-t" id="sheetTitle">编辑</div>
+  <div class="psh-s" id="sheetSub">—</div>
+  <div class="pfld">
+    <label for="sheetWords">当天背了多少词</label>
+    <input class="pin pbig" type="number" id="sheetWords" min="0" step="10" inputmode="numeric" placeholder="0">
   </div>
-</nav>
+  <div class="pfld" id="sheetLearnWrap">
+    <label for="sheetLearn">现在一共掌握多少词（<span id="sheetLearnTotal">3,597</span> 里）</label>
+    <input class="pin pbig" type="number" id="sheetLearn" min="0" step="1" inputmode="numeric" placeholder="0">
+  </div>
+  <p class="psh-h">照 app 里的「已掌握」填，用来算总进度。不想改就保持原样。</p>
+  <div class="pchk" id="sheetManualWrap"><i id="sheetManualIco"></i><span>当天有其他学习（语法 / 听力 / 阅读）</span></div>
+  <div class="pact">
+    <button class="pbt" id="sheetCancel">取消</button>
+    <button class="pbt pri" id="sheetSave">保存</button>
+  </div>
+</div>
 
-<div class="mask" id="mask" hidden>
-  <div class="sheet">
-    <h3 id="sheetTitle">编辑</h3>
-    <p class="sd" id="sheetSub">—</p>
-    <div class="f">
-      <label for="sheetWords">当天背了多少词</label>
-      <input type="number" id="sheetWords" min="0" step="10" inputmode="numeric" placeholder="0">
-    </div>
-    <div class="f" id="sheetLearnWrap">
-      <label for="sheetLearn">现在一共掌握多少词（<span id="sheetLearnTotal">3,597</span> 里）</label>
-      <input type="number" id="sheetLearn" min="0" step="1" inputmode="numeric" placeholder="0">
-      <p class="hint" style="margin-top:6px">照 app 里的「已掌握」填，用来算总进度。不想改就保持原样。</p>
-    </div>
-    <label class="chk"><input type="checkbox" id="sheetManual"> 当天有其他学习（语法 / 听力 / 阅读）</label>
-    <div class="sheet-actions">
-      <button class="btn" id="sheetCancel">取消</button>
-      <button class="btn primary" id="sheetSave">保存</button>
-    </div>
-  </div>
+<!-- 主题选择浮层 -->
+<div class="th-mask" id="thMask"></div>
+<div class="th-panel" id="thPanel">
+  <div class="th-h"><b>换个风格</b><span>21 套 · 随数据同步</span></div>
+  <div class="th-grid" id="thGrid"></div>
+  <button class="th-close" id="thClose">收起</button>
 </div>
 
 <div class="toast" id="toast"></div>
 
+<!-- 打卡动效层：每套主题一套专属动效，见 fx.js -->
+<div class="fxLayer" id="fxLayer"><div class="fxStage" id="fxStage"></div></div>
+
+<!-- 底部切换：三个屏 -->
+<nav class="tabbar">
+  <button class="tab on" data-view="today">
+    <svg viewBox="0 0 24 24"><path d="M12 3v9l5 3"/><circle cx="12" cy="12" r="9"/></svg>
+    <span>今日</span>
+  </button>
+  <button class="tab" data-view="review">
+    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>
+    <span>回顾</span>
+  </button>
+  <button class="tab" data-view="settings">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .32 1.77l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.6 1.6 0 0 0-1.77-.32 1.6 1.6 0 0 0-.97 1.47V21a2 2 0 1 1-4 0v-.11a1.6 1.6 0 0 0-1.05-1.46 1.6 1.6 0 0 0-1.77.32l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.6 1.6 0 0 0 4.6 15a1.6 1.6 0 0 0-1.47-.97H3a2 2 0 1 1 0-4h.11A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.32-1.77l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.6 1.6 0 0 0 9 4.6h.09A1.6 1.6 0 0 0 10 3.13V3a2 2 0 1 1 4 0v.11a1.6 1.6 0 0 0 .97 1.47 1.6 1.6 0 0 0 1.77-.32l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.6 1.6 0 0 0 19.4 9v.09a1.6 1.6 0 0 0 1.47.97H21a2 2 0 1 1 0 4h-.11a1.6 1.6 0 0 0-1.47.97z"/></svg>
+    <span>设置</span>
+  </button>
+</nav>
+
 <script src="cfg.js"></script>
+<script src="themes.js"></script>
+<script src="fx.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

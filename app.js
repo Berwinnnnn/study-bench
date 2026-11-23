@@ -74,14 +74,72 @@
   var S = null;
   var syncCfg = { gistId: '', token: '' };
 
+  var DEF_GOAL = 3597;       // 四级词书总量
+  var DAY_MS = 86400000;
+
   function blank() {
     return {
       v: 2,
       u: 0,
-      config: { goalWords: 4500, dailyTarget: 50, u: 0 },
+      config: {
+        goalWords: DEF_GOAL, goalU: 0, mig: 1,
+        learnedWords: 0, learnedU: 0, learnedHist: [],
+        dailyTarget: 50, dailyU: 0
+      },
       todos: [],
       days: {}
     };
+  }
+
+  function num(v, d) { var n = Number(v); return isFinite(n) ? n : d; }
+
+  /* 快照数组清洗：按天去重（同一天只留最后一条），按时间排序，只留最近 40 条。
+   * 两台设备各记一条同一天的，合并后也只算一条，不会让曲线抖。 */
+  function cleanHist(arr) {
+    var map = {};
+    if (!Array.isArray(arr)) return [];
+    arr.forEach(function (x) {
+      if (!x) return;
+      var t = num(x.t, 0), v = num(x.v, -1);
+      if (t <= 0 || v < 0) return;
+      var k = ds(new Date(t));
+      var ex = map[k];
+      if (!ex || t > ex.t) map[k] = { t: t, v: Math.round(v) };
+    });
+    return Object.keys(map).map(function (k) { return map[k]; })
+      .sort(function (a, b) { return a.t - b.t; })
+      .slice(-40);
+  }
+
+  /* config 补齐成新结构。
+   * 旧版是 {goalWords, dailyTarget, u} 一把梭，改任何一个都会顶掉另一个；
+   * 现在三个字段各自带时间戳，合并时互不干扰。
+   * 旧版写死的 4500 不是用户选的，首次读到就换成 3597；用 mig 标记保证只迁一次，
+   * 用户之后真想填 4500 也不会被反复改回去。 */
+  function normalizeConfig(c, out) {
+    c = c || {};
+    var legacyU = num(c.u, 0);
+
+    var rawG = num(c.goalWords, 0);
+    var g = rawG;
+    if (c.mig !== 1 && (!rawG || rawG === 4500)) g = DEF_GOAL;
+    if (!g || g < 100) g = DEF_GOAL;
+    out.goalWords = Math.round(g);
+    out.goalU = num(c.goalU, legacyU);
+
+    out.learnedWords = Math.max(0, Math.round(num(c.learnedWords, 0)));
+    out.learnedU = num(c.learnedU, 0);
+
+    out.dailyTarget = Math.max(1, Math.round(num(c.dailyTarget, 50) || 50));
+    out.dailyU = num(c.dailyU, legacyU);
+
+    out.learnedHist = cleanHist(c.learnedHist);
+    // 老数据只有「已掌握」没有历史：把那个时间点当第一条快照，好过一条都没有
+    if (!out.learnedHist.length && out.learnedWords > 0 && out.learnedU > 0) {
+      out.learnedHist = [{ t: out.learnedU, v: out.learnedWords }];
+    }
+    out.mig = 1;
+    return out;
   }
 
   function normalize(o) {
@@ -89,11 +147,7 @@
     var s = blank();
     s.v = 2;
     s.u = o.u || 0;
-    if (o.config) {
-      s.config.goalWords = Number(o.config.goalWords) || 4500;
-      s.config.dailyTarget = Number(o.config.dailyTarget) || 50;
-      s.config.u = o.config.u || 0;
-    }
+    normalizeConfig(o.config, s.config);
     if (Array.isArray(o.todos)) s.todos = o.todos.filter(function (t) { return t && t.id; });
     if (o.days && typeof o.days === 'object') {
       Object.keys(o.days).forEach(function (k) {
@@ -144,9 +198,14 @@
     try { localStorage.setItem(K_SYNC, JSON.stringify(syncCfg)); } catch (e) { }
   }
 
+  /* root 指明这次改的是哪一块，只给对应的字段打时间戳。
+   * 这样电脑改了每日目标、手机改了已掌握，两边同步不会互相顶掉。 */
   function touch(root) {
-    S.u = now();
-    if (root === 'config') S.config.u = now();
+    var t = now();
+    S.u = t;
+    if (root === 'goal' || root === 'config') S.config.goalU = t;
+    if (root === 'learned' || root === 'config') S.config.learnedU = t;
+    if (root === 'target' || root === 'config') S.config.dailyU = t;
     saveLocal();
     markDirty();
   }
@@ -211,6 +270,50 @@
     return s / 7;
   }
 
+  /* ---------------- 进度：以「已掌握」为准 ----------------
+   * 打卡数字（新学 + 复习）会重复计算，只能用来算热力图和连续天数，
+   * 不能当词书进度。进度条只认你手动填的「已掌握」。
+   */
+  function goalWords() { return Math.max(1, Math.round(num(S.config.goalWords, DEF_GOAL))); }
+  function learned() { return Math.max(0, Math.round(num(S.config.learnedWords, 0))); }
+
+  /* 每天最多留一条快照：同一天改几次只保留最后一次，避免曲线抖动 */
+  function learnSnapshot(t, v) {
+    var hist = S.config.learnedHist || [];
+    var k = ds(new Date(t));
+    var hit = false;
+    for (var i = 0; i < hist.length; i++) {
+      if (ds(new Date(hist[i].t)) === k) { hist[i] = { t: t, v: v }; hit = true; break; }
+    }
+    if (!hit) hist.push({ t: t, v: v });
+    S.config.learnedHist = cleanHist(hist);
+  }
+
+  function setLearned(v) {
+    v = Math.max(0, Math.round(num(v, 0)));
+    S.config.learnedWords = v;
+    learnSnapshot(now(), v);
+    touch('learned');
+  }
+
+  /* 预测速度：B（实测）+ C（估算）
+   * B：首尾两条快照的差值 ÷ 中间隔了几天。这是真实速度，优先用。
+   * C：只有一条快照时，用「每日新学目标」顶上，并说明这是估的。
+   * 都没涨（或反而掉了）就不硬算，退回 C。
+   */
+  function speedInfo() {
+    var hist = S.config.learnedHist || [];
+    if (hist.length >= 2) {
+      var a = hist[0], b = hist[hist.length - 1];
+      var span = (b.t - a.t) / DAY_MS;
+      var gain = b.v - a.v;
+      if (span >= 1 && gain > 0) {
+        return { mode: 'measured', perDay: gain / span, span: Math.round(span), gain: gain };
+      }
+    }
+    return { mode: 'estimate', perDay: Math.max(1, S.config.dailyTarget) };
+  }
+
   /* ================= 合并 ================= */
   function mergeDays(a, b) {
     var out = {};
@@ -247,12 +350,20 @@
     var L = normalize(local), R = normalize(remote);
     var out = blank();
     out.u = Math.max(L.u, R.u);
-    // config：取较新
-    if ((R.config.u || 0) > (L.config.u || 0)) {
-      out.config = { goalWords: R.config.goalWords, dailyTarget: R.config.dailyTarget, u: R.config.u };
-    } else {
-      out.config = { goalWords: L.config.goalWords, dailyTarget: L.config.dailyTarget, u: L.config.u };
-    }
+
+    // config：三个字段各按自己的时间戳取较新，别人改了目标不会把你的已掌握冲掉
+    var lc = L.config, rc = R.config;
+    out.config.goalWords = (rc.goalU > lc.goalU) ? rc.goalWords : lc.goalWords;
+    out.config.dailyTarget = (rc.dailyU > lc.dailyU) ? rc.dailyTarget : lc.dailyTarget;
+    out.config.learnedWords = (rc.learnedU > lc.learnedU) ? rc.learnedWords : lc.learnedWords;
+    out.config.goalU = Math.max(lc.goalU, rc.goalU);
+    out.config.dailyU = Math.max(lc.dailyU, rc.dailyU);
+    out.config.learnedU = Math.max(lc.learnedU, rc.learnedU);
+
+    // 快照两边都留着（按天去重），这样两台设备交替记录也能连出一条完整曲线
+    out.config.learnedHist = cleanHist(lc.learnedHist.concat(rc.learnedHist));
+    out.config.mig = 1;
+
     out.todos = mergeTodos(L.todos, R.todos);
     out.days = mergeDays(L.days, R.days);
     return out;
@@ -260,8 +371,8 @@
 
   function samePayload(a, b) {
     // 只比较业务字段，忽略顶层 u
-    var A = { c: [a.config.goalWords, a.config.dailyTarget], t: a.todos, d: a.days };
-    var B = { c: [b.config.goalWords, b.config.dailyTarget], t: b.todos, d: b.days };
+    var A = { c: [a.config.goalWords, a.config.dailyTarget, a.config.learnedWords, a.config.learnedHist], t: a.todos, d: a.days };
+    var B = { c: [b.config.goalWords, b.config.dailyTarget, b.config.learnedWords, b.config.learnedHist], t: b.todos, d: b.days };
     return JSON.stringify(A) === JSON.stringify(B);
   }
 
@@ -409,9 +520,8 @@
     var active = isActive(key);
 
     $('todayDate').textContent = (t.getMonth() + 1) + '月' + t.getDate() + '日 · ' + WD[t.getDay()];
-    $('heroTitle').textContent = active
-      ? (words > 0 ? '今天已背 ' + words + ' 词' : '今天已完成')
-      : '今天还没开始';
+    // 数字就在下面一行显示，标题不再重复一遍
+    $('heroTitle').textContent = active ? '今天已记录' : '今天还没开始';
     $('streakNum').textContent = streak();
 
     var btn = $('checkinBtn'), txt = $('checkinTxt'), ico = $('checkinIco');
@@ -430,6 +540,12 @@
     pill.textContent = '目标 ' + S.config.dailyTarget + ' 词';
     pill.classList.toggle('on', words >= S.config.dailyTarget);
     $('wordLabel').classList.toggle('done', words > 0);
+
+    // 今日页露一手「已掌握」，省得为了看一眼进度切到回顾页
+    var g = goalWords(), lw = learned();
+    $('learnNum').textContent = lw.toLocaleString();
+    $('learnGoal').textContent = g.toLocaleString();
+    $('learnBar').style.width = Math.min(100, lw / g * 100) + '%';
 
     renderTodos(d);
   }
@@ -489,37 +605,51 @@
   }
 
   function renderReview() {
-    var tw = totalWords();
-    var goal = S.config.goalWords || 4500;
-    var pct = Math.min(100, Math.round(tw / goal * 100));
+    var g = goalWords(), lw = learned();
+    var pct = Math.min(100, Math.round(lw / g * 100));
 
-    $('stTotalWords').textContent = tw.toLocaleString();
+    $('stTotalWords').textContent = totalWords().toLocaleString();
     $('stDays').textContent = studyDays();
     $('stAvg').textContent = Math.round(avg7());
 
-    $('pgDone').textContent = tw.toLocaleString();
-    $('pgGoal').textContent = goal.toLocaleString();
-    $('pgLeft').textContent = '剩 ' + Math.max(0, goal - tw).toLocaleString();
+    $('pgDone').textContent = lw.toLocaleString();
+    $('pgGoal').textContent = g.toLocaleString();
+    $('pgLeft').textContent = '剩 ' + Math.max(0, g - lw).toLocaleString();
     $('pctPill').textContent = pct + '%';
     $('pgBar').style.width = pct + '%';
 
-    var a = avg7();
-    var fc = $('forecast');
-    if (a < 1) {
-      fc.textContent = '还没有足够数据估算。先背几天，这里会自己算出来。';
-    } else {
-      var rest = Math.max(0, goal - tw);
-      if (rest === 0) {
-        fc.textContent = '四级词表已经过完了。';
-      } else {
-        var days = Math.ceil(rest / a);
-        fc.innerHTML = '按最近 7 天平均 <b>' + a.toFixed(1) + '</b> 词/天，大约还需 <b>' +
-          days + '</b> 天（约 ' + (Math.round(days / 30 * 10) / 10) + ' 个月）。';
-      }
-    }
-
+    renderForecast(g, lw);
     renderHeatmap();
     renderLast7();
+  }
+
+  /* 预测文案：说清「这个速度是哪来的」，别让估算冒充实测 */
+  function renderForecast(g, lw) {
+    var fc = $('forecast');
+    var rest = Math.max(0, g - lw);
+
+    if (lw <= 0) {
+      fc.innerHTML = '在你的 app 里看一眼「已掌握」多少，点上面的数字填进来，这里就能算出还要多久。';
+      return;
+    }
+    if (rest === 0) {
+      fc.textContent = '这本词书已经过完了。';
+      return;
+    }
+
+    var sp = speedInfo();
+    var days = Math.max(1, Math.ceil(rest / sp.perDay));
+    var months = Math.round(days / 30 * 10) / 10;
+    var tail = days > 45 ? '（约 ' + months + ' 个月）' : '';
+
+    if (sp.mode === 'measured') {
+      fc.innerHTML = '最近 <b>' + sp.span + '</b> 天实测每天多掌握 <b>' + sp.perDay.toFixed(1) +
+        '</b> 词，还差 <b>' + rest + '</b> 词，大约 <b>' + days + '</b> 天' + tail + '。';
+    } else {
+      fc.innerHTML = '只有一次记录，先按每天新学目标 <b>' + sp.perDay +
+        '</b> 词估算，大约 <b>' + days + '</b> 天' + tail +
+        '。再记一两次就能按你的真实速度算。';
+    }
   }
 
   function levelOf(words, active) {
@@ -533,26 +663,32 @@
   function renderHeatmap() {
     var box = $('heatmap');
     box.innerHTML = '';
-    var WEEKS = 18;
+    // 列数跟着容器算，18 周在手机上只剩 2/3 宽，看上去像没画满
+    var cellW = 13, gap = 3, pad = 2;
+    var avail = (box.clientWidth || 320) - pad * 2;
+    var WEEKS = Math.max(10, Math.min(26, Math.floor((avail + gap) / (cellW + gap))));
     var t = today();
     var end = new Date(t);
     end.setDate(end.getDate() + (6 - end.getDay()));
     var start = new Date(end);
     start.setDate(start.getDate() - (WEEKS * 7 - 1));
+    box.style.gap = gap + 'px';
 
     for (var w = 0; w < WEEKS; w++) {
       var col = document.createElement('div');
       col.className = 'hm-col';
+      col.style.gap = gap + 'px';
       for (var i = 0; i < 7; i++) {
         var d = new Date(start);
         d.setDate(d.getDate() + w * 7 + i);
         var key = ds(d);
         var rec = peek(key);
         var future = d > t;
+        var lv = levelOf(rec ? rec.words : 0, isActive(key));
         var cell = document.createElement('div');
-        cell.className = 'hm-cell' +
-          (future ? '' : (levelOf(rec ? rec.words : 0, isActive(key)) ? ' l' + levelOf(rec ? rec.words : 0, isActive(key)) : '')) +
-          (key === ds(t) ? ' today' : '');
+        cell.className = 'hm-cell' + (future ? '' : (lv ? ' l' + lv : '')) + (key === ds(t) ? ' today' : '');
+        cell.style.width = cellW + 'px';
+        cell.style.height = cellW + 'px';
         if (future) { cell.style.visibility = 'hidden'; }
         else {
           cell.title = key + ' · ' + (rec && rec.words ? rec.words + ' 词' : (isActive(key) ? '已学习' : '无记录'));
@@ -563,6 +699,8 @@
       box.appendChild(col);
     }
     box.scrollLeft = box.scrollWidth;
+    var wk = $('hmWeeks');
+    if (wk) wk.textContent = '近 ' + WEEKS + ' 周';
   }
 
   function renderLast7() {
@@ -581,7 +719,8 @@
   }
 
   function renderSettings() {
-    $('goalInput').value = S.config.goalWords;
+    $('goalInput').value = goalWords();
+    $('learnedInput').value = learned();
     $('targetInput').value = S.config.dailyTarget;
     $('gistInput').value = syncCfg.gistId;
     $('tokenInput').value = syncCfg.token;
@@ -605,10 +744,18 @@
     sheetKey = key;
     var rec = peek(key);
     var d = parseDay(key);
+    var isToday = key === ds(today());
     $('sheetTitle').textContent = (d.getMonth() + 1) + '月' + d.getDate() + '日 · ' + WD[d.getDay()];
-    $('sheetSub').textContent = key === ds(today()) ? '今天' : '补录 / 修改历史记录';
+    $('sheetSub').textContent = isToday ? '今天' : '补录 / 修改历史记录';
     $('sheetWords').value = rec ? rec.words : 0;
     $('sheetManual').checked = rec ? !!rec.manual : false;
+
+    // 「已掌握」只对今天开放：历史那天你填不出当时的累计数，填了反而把曲线带歪
+    var g = goalWords(), lw = learned();
+    $('sheetLearnWrap').hidden = !isToday;
+    $('sheetLearn').value = lw;
+    $('sheetLearnTotal').textContent = g.toLocaleString();
+
     var m = $('mask');
     m.hidden = false;
     requestAnimationFrame(function () { m.classList.add('show'); });
@@ -661,13 +808,15 @@
         touch(); renderAll(); bumpStreak();
         toast('已打卡 · 连续 ' + streak() + ' 天');
         scheduleSync();
-      } else if ((d.words || 0) === 0 && d.done.length === 0) {
+      } else if (active && (d.words || 0) === 0 && (d.done || []).length === 0) {
+        // 只有「空打卡」才允许一键取消；已经有词数的记录不让这个按钮抹掉
         d.manual = false; d.u = now();
         touch(); renderAll();
         toast('已取消今天的打卡');
         scheduleSync();
       } else {
-        toast('今天已经记录了，要改点上面的数字');
+        // 已经记了东西：不撒谎也不清空，直接把面板打开让他改
+        openSheet(key);
       }
     });
 
@@ -678,6 +827,7 @@
     $('undoBtn').addEventListener('click', function () { addWords(-20); });
     $('customBtn').addEventListener('click', function () { openSheet(ds(today())); });
     $('wordLabel').addEventListener('click', function () { openSheet(ds(today())); });
+    $('learnRow').addEventListener('click', function () { openSheet(ds(today())); });
 
     var ruleSel = $('todoRule');
     ruleSel.addEventListener('change', function () {
@@ -709,6 +859,14 @@
       d.words = Math.max(0, parseInt($('sheetWords').value, 10) || 0);
       d.manual = $('sheetManual').checked;
       d.u = now();
+
+      // 同一次保存里把「已掌握」也更新掉，少一次开关面板
+      var isToday = sheetKey === ds(today());
+      if (isToday) {
+        var lv = parseInt($('sheetLearn').value, 10);
+        if (!isNaN(lv) && lv >= 0) setLearned(lv);
+      }
+
       touch(); closeSheet(); renderAll();
       toast('已保存');
       scheduleSync();
@@ -720,16 +878,24 @@
 
     $('goalInput').addEventListener('change', function () {
       var v = parseInt(this.value, 10);
-      if (!v || v < 100) { this.value = S.config.goalWords; return; }
+      if (!v || v < 100) { this.value = goalWords(); return; }
       S.config.goalWords = v;
-      touch('config'); renderReview(); toast('目标已更新');
+      touch('goal'); renderAll(); toast('词书总量已更新');
+      scheduleSync();
+    });
+    $('learnedInput').addEventListener('change', function () {
+      var v = parseInt(this.value, 10);
+      if (isNaN(v) || v < 0) { this.value = learned(); return; }
+      if (v > goalWords()) { this.value = learned(); toast('不能超过词书总量'); return; }
+      setLearned(v);
+      renderAll(); toast('已掌握更新为 ' + v + ' 词');
       scheduleSync();
     });
     $('targetInput').addEventListener('change', function () {
       var v = parseInt(this.value, 10);
       if (!v || v < 1) { this.value = S.config.dailyTarget; return; }
       S.config.dailyTarget = v;
-      touch('config'); renderToday(); toast('每日目标已更新');
+      touch('target'); renderAll(); toast('每日目标已更新');
       scheduleSync();
     });
 

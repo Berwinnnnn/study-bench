@@ -1,7 +1,9 @@
-/* 学习打卡 · v2
- * 本地优先 + GitHub Gist 双向同步
- * 合并策略：按日期 / 待办 id 逐个做 LWW（谁最后改谁生效），不做整份覆盖
- * 所以手机和电脑同时改也不会互相清掉
+/* 学习打卡 · v3 —— 21 套主题版
+ *
+ * 相对 v2 的变化：
+ * 1. 主题从 1 套扩到 21 套，只改 <body data-s>，所有样式由 themes.js 提供
+ * 2. 主题选择写进 config.theme + 独立时间戳 themeU，随 Gist 双端同步
+ * 3. 渲染层按新版式重写；数据 / 同步 / 合并 / 预测逻辑与 v2 完全一致
  */
 (function () {
   'use strict';
@@ -14,6 +16,8 @@
 
   var WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   var WD_S = ['日', '一', '二', '三', '四', '五', '六'];
+  var DEF_GOAL = 3597;
+  var DAY_MS = 86400000;
 
   /* ---------------- 工具 ---------------- */
   function pad(n) { return n < 10 ? '0' + n : '' + n; }
@@ -22,12 +26,21 @@
   function shift(n) { var d = today(); d.setDate(d.getDate() + n); return d; }
   function now() { return Date.now(); }
   function parseDay(s) { return new Date(s + 'T00:00:00'); }
-
   function $(id) { return document.getElementById(id); }
+  function num(v, d) { var n = Number(v); return isFinite(n) ? n : d; }
+
+  /* 感知亮度：判断这个底色算深色还是浅色，用于 color-scheme 与防闪色缓存 */
+  function luminance(hex) {
+    var s = String(hex || '').trim();
+    var m = s.match(/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+    if (!m) return 255;
+    return 0.2126 * parseInt(m[1], 16) + 0.7152 * parseInt(m[2], 16) + 0.0722 * parseInt(m[3], 16);
+  }
 
   var toastTimer = null;
   function toast(msg) {
     var t = $('toast');
+    if (!t) return;
     t.textContent = msg;
     t.classList.add('show');
     clearTimeout(toastTimer);
@@ -36,11 +49,7 @@
 
   function uid() { return 't' + now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
-  /* ---------------- 配对链接 ----------------
-   * 部署助手会生成 <网址>#k=<base64({g:gistId,t:token})>
-   * 手机点一次就自动配好，不用手打 token
-   * 读取后立刻从地址栏抹掉，避免留在浏览记录里
-   */
+  /* ---------------- 配对链接 ---------------- */
   function fromB64u(s) {
     s = s.replace(/-/g, '+').replace(/_/g, '/');
     while (s.length % 4) s += '=';
@@ -74,27 +83,22 @@
   var S = null;
   var syncCfg = { gistId: '', token: '' };
 
-  var DEF_GOAL = 3597;       // 四级词书总量
-  var DAY_MS = 86400000;
-
   function blank() {
     return {
-      v: 2,
+      v: 3,
       u: 0,
       config: {
         goalWords: DEF_GOAL, goalU: 0, mig: 1,
         learnedWords: 0, learnedU: 0, learnedHist: [],
-        dailyTarget: 50, dailyU: 0
+        dailyTarget: 50, dailyU: 0,
+        theme: 's01', themeU: 0
       },
       todos: [],
       days: {}
     };
   }
 
-  function num(v, d) { var n = Number(v); return isFinite(n) ? n : d; }
-
-  /* 快照数组清洗：按天去重（同一天只留最后一条），按时间排序，只留最近 40 条。
-   * 两台设备各记一条同一天的，合并后也只算一条，不会让曲线抖。 */
+  /* 快照数组清洗：按天去重，按时间排序，只留最近 40 条 */
   function cleanHist(arr) {
     var map = {};
     if (!Array.isArray(arr)) return [];
@@ -111,11 +115,6 @@
       .slice(-40);
   }
 
-  /* config 补齐成新结构。
-   * 旧版是 {goalWords, dailyTarget, u} 一把梭，改任何一个都会顶掉另一个；
-   * 现在三个字段各自带时间戳，合并时互不干扰。
-   * 旧版写死的 4500 不是用户选的，首次读到就换成 3597；用 mig 标记保证只迁一次，
-   * 用户之后真想填 4500 也不会被反复改回去。 */
   function normalizeConfig(c, out) {
     c = c || {};
     var legacyU = num(c.u, 0);
@@ -134,18 +133,22 @@
     out.dailyU = num(c.dailyU, legacyU);
 
     out.learnedHist = cleanHist(c.learnedHist);
-    // 老数据只有「已掌握」没有历史：把那个时间点当第一条快照，好过一条都没有
     if (!out.learnedHist.length && out.learnedWords > 0 && out.learnedU > 0) {
       out.learnedHist = [{ t: out.learnedU, v: out.learnedWords }];
     }
     out.mig = 1;
+
+    /* 主题：非法 id 一律退回 s01，保证不会因为数据脏了而白屏 */
+    var tid = String(c.theme || '');
+    out.theme = themeById(tid) ? tid : 's01';
+    out.themeU = num(c.themeU, 0);
     return out;
   }
 
   function normalize(o) {
     if (!o || typeof o !== 'object') return blank();
     var s = blank();
-    s.v = 2;
+    s.v = 3;
     s.u = o.u || 0;
     normalizeConfig(o.config, s.config);
     if (Array.isArray(o.todos)) s.todos = o.todos.filter(function (t) { return t && t.id; });
@@ -175,22 +178,15 @@
     try { localStorage.setItem(K_DATA, JSON.stringify(S)); } catch (e) { }
   }
 
-  function markDirty() {
-    try { localStorage.setItem(K_DIRTY, '1'); } catch (e) { }
-  }
-  function isDirty() {
-    try { return localStorage.getItem(K_DIRTY) === '1'; } catch (e) { return false; }
-  }
-  function clearDirty() {
-    try { localStorage.removeItem(K_DIRTY); } catch (e) { }
-  }
+  function markDirty() { try { localStorage.setItem(K_DIRTY, '1'); } catch (e) { } }
+  function isDirty() { try { return localStorage.getItem(K_DIRTY) === '1'; } catch (e) { return false; } }
+  function clearDirty() { try { localStorage.removeItem(K_DIRTY); } catch (e) { } }
 
   function loadSync() {
     try {
       var raw = localStorage.getItem(K_SYNC);
       if (raw) { var o = JSON.parse(raw); syncCfg.gistId = o.gistId || ''; syncCfg.token = o.token || ''; }
     } catch (e) { }
-    // cfg.js 里预置的 Gist ID 作为默认值（部署助手写入），本机填过就以本机为准
     var preset = (window.SB_CONFIG && window.SB_CONFIG.gistId) || '';
     if (preset && !syncCfg.gistId) syncCfg.gistId = preset;
   }
@@ -198,16 +194,138 @@
     try { localStorage.setItem(K_SYNC, JSON.stringify(syncCfg)); } catch (e) { }
   }
 
-  /* root 指明这次改的是哪一块，只给对应的字段打时间戳。
-   * 这样电脑改了每日目标、手机改了已掌握，两边同步不会互相顶掉。 */
+  /* root 指明这次改的是哪一块，只给对应字段打时间戳 */
   function touch(root) {
     var t = now();
     S.u = t;
     if (root === 'goal' || root === 'config') S.config.goalU = t;
     if (root === 'learned' || root === 'config') S.config.learnedU = t;
     if (root === 'target' || root === 'config') S.config.dailyU = t;
+    if (root === 'theme') S.config.themeU = t;
     saveLocal();
     markDirty();
+  }
+
+  /* ================= 主题 ================= */
+  var TH = window.SB_THEMES || { base: '', skel: '', list: [] };
+  var THEMES = TH.list || [];
+  var THEME_MAP = {};
+  THEMES.forEach(function (t) { THEME_MAP[t.id] = t; });
+
+  function themeById(id) { return THEME_MAP[id] || null; }
+
+  /* 生成某个主题的 CSS 变量块 + 该主题的所有样式 */
+  function themeBlock(t) {
+    var c = t.c;
+    return '[data-s="' + t.id + '"]{'
+      + '--bg:' + c.bg + ';--sur:' + c.sur + ';--ink:' + c.ink + ';--ink2:' + c.ink2
+      + ';--mut:' + c.mut + ';--line:' + c.line + ';--ac:' + c.ac + ';--acd:' + c.acd
+      + ';--acl:' + c.acl + ';--alt:' + c.alt + ';--onac:' + c.onac
+      + ';--fam:' + t.f.fam + ';--num:' + t.f.num + ';--nwt:' + t.f.w + ';--nlsp:' + t.f.lsp
+      + ';--r:' + t.r + ';--bd:' + t.bd + ';--sh:' + t.sh + ';--br:' + t.br
+      + ';--bbd:' + t.bbd + ';--bsh:' + t.bsh + ';--pill:' + t.pill
+      + ';--ckr:' + t.ckr + ';--std:' + t.std + ';--nfs:' + t.nfs + ';--bls:' + t.bls
+      + '}'
+      + (t.css || '')
+      + (t.l1 || '') + (t.l2 || '') + (t.l3 || '') + (t.l4 || '') + (t.l5 || '');
+  }
+
+  var themeStyleEl = null;
+  var currentThemeId = null;
+
+  function applyTheme(id, skipSave) {
+    var t = themeById(id) || THEMES[0];
+    if (!t) return;
+
+    if (!themeStyleEl) {
+      themeStyleEl = document.createElement('style');
+      themeStyleEl.id = 'theme-css';
+      document.head.appendChild(themeStyleEl);
+    }
+    /* 只保留当前这一套：单主题 css 约 8KB，比全部 21 套 180KB 轻得多 */
+    themeStyleEl.textContent = themeBlock(t);
+
+    /* 主题挂在 <html> 上：变量、底色和整份主题样式都在这一层，
+       body 只做继承。这样首帧（<head> 里的防闪色脚本）和切换后
+       走的是同一条取值路径，不会出现两套颜色打架。 */
+    document.documentElement.setAttribute('data-s', t.id);
+    var c = t.c;
+
+    /* 同步 meta theme-color，让手机浏览器地址栏跟着变色 */
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', c.bg);
+
+    /* 深色主题下让原生控件（滚动条、输入框光标、下拉）跟着变深 */
+    document.documentElement.style.colorScheme = luminance(c.bg) < 128 ? 'dark' : 'light';
+
+    currentThemeId = t.id;
+
+    if (!skipSave && S && S.config.theme !== t.id) {
+      S.config.theme = t.id;
+      touch('theme');
+      scheduleSync();
+    }
+
+    renderThemePickers();
+    renderThemeNow();
+    syncHeroAlign();
+  }
+
+  /* 主题可能把 hero 改成右对齐 / 居中，徽章与快捷加词会挤在同一行的右侧。
+     这里做一次真实碰撞检测：量准两者的矩形，只有真正叠到「会压住文字」的程度
+     才把快捷组下移一行。用实测值判断，不按主题 id 硬编码。 */
+  function syncHeroAlign() {
+    var hero = document.querySelector('.phero');
+    if (!hero) return;
+    hero.classList.remove('fend');
+    var stk = hero.querySelector('.pstk');
+    var qk = hero.querySelector('.pquick');
+    if (!stk || !qk) return;
+
+    var a = stk.getBoundingClientRect();
+    var b = qk.getBoundingClientRect();
+    /* 水平交叠超过 8px 且纵向也交叠，才算真的压住了 */
+    var ox = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+    var oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+    if (ox > 8 && oy > 4) hero.classList.add('fend');
+  }
+
+  function renderThemeNow() {
+    var t = themeById(currentThemeId) || THEMES[0];
+    var el = $('themeNow');
+    if (el && t) el.textContent = '当前 ' + t.no + ' ' + t.name;
+  }
+
+  function renderThemePickers() {
+    /* 设置页里的小色板：7 列，21 套刚好 3 行 */
+    var grid = $('themeGrid');
+    if (grid) {
+      var html = '';
+      THEMES.forEach(function (t) {
+        html += '<i data-th="' + t.id + '" class="' + (t.id === currentThemeId ? 'on' : '')
+          + '" style="--tc:' + t.key + '" title="' + t.no + ' ' + t.name + '"></i>';
+      });
+      grid.innerHTML = html;
+    }
+    /* 换风格面板：3 列，带色带与名称 */
+    var g2 = $('thGrid');
+    if (g2) {
+      var h2 = '';
+      THEMES.forEach(function (t) {
+        h2 += '<div class="th-item ' + (t.id === currentThemeId ? 'on' : '') + '" data-th="' + t.id + '">'
+          + '<div class="th-sw">'
+          + '<i style="background:' + t.c.bg + '"></i>'
+          + '<i style="background:' + t.c.sur + '"></i>'
+          + '<i style="background:' + t.c.ac + '"></i>'
+          + '<i style="background:' + t.c.alt + '"></i>'
+          + '<i style="background:' + t.c.ink + '"></i>'
+          + '</div>'
+          + '<div class="th-nm">' + t.name + '</div>'
+          + '<div class="th-no">' + t.no + '</div>'
+          + '</div>';
+      });
+      g2.innerHTML = h2;
+    }
   }
 
   /* ---------------- 日期 / 规则 ---------------- */
@@ -270,14 +388,9 @@
     return s / 7;
   }
 
-  /* ---------------- 进度：以「已掌握」为准 ----------------
-   * 打卡数字（新学 + 复习）会重复计算，只能用来算热力图和连续天数，
-   * 不能当词书进度。进度条只认你手动填的「已掌握」。
-   */
   function goalWords() { return Math.max(1, Math.round(num(S.config.goalWords, DEF_GOAL))); }
   function learned() { return Math.max(0, Math.round(num(S.config.learnedWords, 0))); }
 
-  /* 每天最多留一条快照：同一天改几次只保留最后一次，避免曲线抖动 */
   function learnSnapshot(t, v) {
     var hist = S.config.learnedHist || [];
     var k = ds(new Date(t));
@@ -296,11 +409,6 @@
     touch('learned');
   }
 
-  /* 预测速度：B（实测）+ C（估算）
-   * B：首尾两条快照的差值 ÷ 中间隔了几天。这是真实速度，优先用。
-   * C：只有一条快照时，用「每日新学目标」顶上，并说明这是估的。
-   * 都没涨（或反而掉了）就不硬算，退回 C。
-   */
   function speedInfo() {
     var hist = S.config.learnedHist || [];
     if (hist.length >= 2) {
@@ -351,7 +459,6 @@
     var out = blank();
     out.u = Math.max(L.u, R.u);
 
-    // config：三个字段各按自己的时间戳取较新，别人改了目标不会把你的已掌握冲掉
     var lc = L.config, rc = R.config;
     out.config.goalWords = (rc.goalU > lc.goalU) ? rc.goalWords : lc.goalWords;
     out.config.dailyTarget = (rc.dailyU > lc.dailyU) ? rc.dailyTarget : lc.dailyTarget;
@@ -360,7 +467,10 @@
     out.config.dailyU = Math.max(lc.dailyU, rc.dailyU);
     out.config.learnedU = Math.max(lc.learnedU, rc.learnedU);
 
-    // 快照两边都留着（按天去重），这样两台设备交替记录也能连出一条完整曲线
+    /* 主题也按自己的时间戳取较新，改主题不会把别的设置冲掉 */
+    out.config.theme = (rc.themeU > lc.themeU) ? rc.theme : lc.theme;
+    out.config.themeU = Math.max(lc.themeU, rc.themeU);
+
     out.config.learnedHist = cleanHist(lc.learnedHist.concat(rc.learnedHist));
     out.config.mig = 1;
 
@@ -370,24 +480,23 @@
   }
 
   function samePayload(a, b) {
-    // 只比较业务字段，忽略顶层 u
-    var A = { c: [a.config.goalWords, a.config.dailyTarget, a.config.learnedWords, a.config.learnedHist], t: a.todos, d: a.days };
-    var B = { c: [b.config.goalWords, b.config.dailyTarget, b.config.learnedWords, b.config.learnedHist], t: b.todos, d: b.days };
+    var A = { c: [a.config.goalWords, a.config.dailyTarget, a.config.learnedWords,
+      a.config.learnedHist, a.config.theme], t: a.todos, d: a.days };
+    var B = { c: [b.config.goalWords, b.config.dailyTarget, b.config.learnedWords,
+      b.config.learnedHist, b.config.theme], t: b.todos, d: b.days };
     return JSON.stringify(A) === JSON.stringify(B);
   }
 
   /* ================= 同步 ================= */
   var syncing = false;
-  var statusKind = 'idle';   // idle | ok | warn | err | busy
-  var statusText = '未连接';
+  var statusKind = 'idle';
 
   function setStatus(kind, text) {
     statusKind = kind;
-    statusText = text;
     var b = $('syncBtn');
     if (!b) return;
-    b.className = 'sync' + (kind === 'idle' ? '' : ' ' + kind);
-    $('syncTxt').textContent = text;
+    b.textContent = text;
+    b.style.color = kind === 'err' ? '#B23B3B' : (kind === 'ok' ? 'var(--acd)' : 'var(--mut)');
   }
 
   function apiFetch(url, opts) {
@@ -398,14 +507,12 @@
     opts.headers['X-GitHub-Api-Version'] = '2022-11-28';
     if (opts.body) opts.headers['Content-Type'] = 'application/json';
     opts.cache = 'no-store';
-    // keepalive：页面关闭 / 锁屏时请求不会被浏览器取消（限 64KB，我们数据远小于此）
     if (opts.keepalive == null) opts.keepalive = true;
     return fetch(url, opts);
   }
 
   function gistIdFromInput(v) {
     v = (v || '').trim();
-    // 支持粘贴整个 gist 链接
     var m = v.match(/gist\.github\.com\/[^\/]+\/([0-9a-f]+)/i);
     if (m) return m[1];
     var m2 = v.match(/([0-9a-f]{20,})/i);
@@ -419,10 +526,8 @@
     }
     if (syncing) return Promise.resolve(false);
 
-    // fast：页面正在隐藏，只有本地改动，直接推，不再拉远端做合并。
-    // 目的只有一个——别让刚点的打卡丢在半路。
     if (fast) {
-      clearTimeout(syncTimer);          // 取消待执行的定时同步，避免紧接着重复请求
+      clearTimeout(syncTimer);
       if (!isDirty()) return Promise.resolve(false);
       syncing = true;
       return pushGist().catch(function () {
@@ -470,10 +575,12 @@
       var msg = err && err.message;
       if (msg === 'TOKEN') {
         setStatus('err', 'Token 无效');
-        $('syncDetail') && ($('syncDetail').textContent = 'Token 无效或已过期，请重新生成（只勾 Gists 读写）。');
+        var d1 = $('syncDetail');
+        if (d1) d1.textContent = 'Token 无效或已过期，请重新生成（只勾 Gists 读写）。';
       } else if (msg === 'GIST') {
         setStatus('err', 'Gist 不存在');
-        $('syncDetail') && ($('syncDetail').textContent = '找不到这个 Gist：可能 ID 错了，或 Token 没有访问权限。');
+        var d2 = $('syncDetail');
+        if (d2) d2.textContent = '找不到这个 Gist：可能 ID 错了，或 Token 没有访问权限。';
       } else {
         setStatus('warn', '离线待同步');
       }
@@ -513,72 +620,83 @@
     syncTimer = setTimeout(function () { syncNow('auto'); }, ms == null ? 1200 : ms);
   }
 
-  /* ================= 渲染 ================= */
-  function renderToday() {
-    var t = today(), key = ds(t), d = dayOf(key, false);
-    var words = d ? d.words : 0;
-    var active = isActive(key);
+  function fmtNum(n) { return Number(n).toLocaleString('en-US'); }
 
-    $('todayDate').textContent = (t.getMonth() + 1) + '月' + t.getDate() + '日 · ' + WD[t.getDay()];
-    // 数字就在下面一行显示，标题不再重复一遍
-    $('heroTitle').textContent = active ? '今天已记录' : '今天还没开始';
-    $('streakNum').textContent = streak();
+  /* ================= 渲染：今日 ================= */
+  var WEEK_H = [42, 68, 55, 90, 36, 74, 100];
 
-    var btn = $('checkinBtn'), txt = $('checkinTxt'), ico = $('checkinIco');
-    if (active) {
-      btn.classList.add('done');
-      ico.textContent = '✓';
-      txt.textContent = '今天已完成 · 点一下取消';
-    } else {
-      btn.classList.remove('done');
-      ico.textContent = '';
-      txt.textContent = '打卡：今天学了';
+  function renderWeek() {
+    var box = $('pweek');
+    if (!box) return;
+    /* 最近 7 天的真实词数，归一化到 10%–100% */
+    var vals = [], max = 1;
+    for (var i = 6; i >= 0; i--) {
+      var rec = peek(ds(shift(-i)));
+      var w = rec ? (rec.words || 0) : 0;
+      vals.push(w);
+      if (w > max) max = w;
     }
-
-    $('wordNum').textContent = words;
-    var pill = $('wordPill');
-    pill.textContent = '目标 ' + S.config.dailyTarget + ' 词';
-    pill.classList.toggle('on', words >= S.config.dailyTarget);
-    $('wordLabel').classList.toggle('done', words > 0);
-
-    // 今日页露一手「已掌握」，省得为了看一眼进度切到回顾页
-    var g = goalWords(), lw = learned();
-    $('learnNum').textContent = lw.toLocaleString();
-    $('learnGoal').textContent = g.toLocaleString();
-    $('learnBar').style.width = Math.min(100, lw / g * 100) + '%';
-
-    renderTodos(d);
+    var any = vals.some(function (v) { return v > 0; });
+    var html = '';
+    vals.forEach(function (v, i) {
+      var h = v > 0 ? Math.max(12, Math.round(v / max * 100)) : 0;
+      html += '<i' + (i === 6 ? ' class="on"' : '') + '>'
+        + '<b style="--hp:' + (h || 100) + '%"></b></i>';
+    });
+    box.innerHTML = html;
+    box.setAttribute('data-empty', any ? '' : '1');
+    /* 空状态：柱子退成一条基线 + 一行说明，比留一片黑更有信息 */
+    var tip = $('weekTip');
+    if (tip) tip.style.display = any ? 'none' : 'block';
   }
 
-  function renderTodos(d) {
+  function renderTodos() {
     var list = $('todoList');
+    if (!list) return;
     var items = todayTodos();
+    var key = ds(today());
+    var d = peek(key);
     var doneIds = (d && d.done) ? d.done : [];
 
-    list.innerHTML = '';
     if (!items.length) {
-      var p = document.createElement('p');
-      p.className = 'hint';
-      p.style.margin = '14px 0 0';
-      p.textContent = '还没有其他待办。下面加一条，比如「语法 30 分钟」。';
-      list.appendChild(p);
+      list.innerHTML = '<p class="plt-empty">还没有其他待办。下面加一条，比如「语法 30 分钟」。</p>';
       return;
     }
 
+    list.innerHTML = '';
     items.forEach(function (t) {
       var done = doneIds.indexOf(t.id) >= 0;
       var row = document.createElement('div');
-      row.className = 'todo' + (done ? ' done' : '');
-      row.innerHTML =
-        '<span class="tick">✓</span>' +
-        '<div class="todo-body"><div class="todo-title"></div>' +
-        '<div class="todo-rule"></div></div>' +
-        '<button class="todo-del" aria-label="删除">×</button>';
-      row.querySelector('.todo-title').textContent = t.title;
-      row.querySelector('.todo-rule').textContent = ruleText(t.rule);
+      row.className = 'pit' + (done ? ' on' : '');
+      row.innerHTML = '<span class="pck"></span>'
+        + '<span class="ptt"></span>'
+        + '<span class="ptg"></span>';
+      row.querySelector('.ptt').textContent = t.title;
+      row.querySelector('.ptg').textContent = ruleText(t.rule);
 
-      row.addEventListener('click', function (e) {
-        if (e.target.classList.contains('todo-del')) return;
+      /* 长按删除，单击勾选 */
+      var pressTimer = null, longPressed = false;
+      function startPress() {
+        longPressed = false;
+        pressTimer = setTimeout(function () {
+          longPressed = true;
+          if (!confirm('删除待办「' + t.title + '」？历史打卡记录会保留。')) return;
+          var target = null;
+          S.todos.forEach(function (x) { if (x.id === t.id) target = x; });
+          if (target) { target.del = true; target.u = now(); }
+          touch();
+          renderToday();
+          scheduleSync();
+          toast('已删除');
+        }, 620);
+      }
+      function endPress() { clearTimeout(pressTimer); }
+      row.addEventListener('pointerdown', startPress);
+      row.addEventListener('pointerup', endPress);
+      row.addEventListener('pointercancel', endPress);
+
+      row.addEventListener('click', function () {
+        if (longPressed) { longPressed = false; return; }
         var dd = dayOf(ds(today()), true);
         var i = dd.done.indexOf(t.id);
         if (i >= 0) dd.done.splice(i, 1); else dd.done.push(t.id);
@@ -588,48 +706,93 @@
         scheduleSync();
       });
 
-      row.querySelector('.todo-del').addEventListener('click', function (e) {
-        e.stopPropagation();
-        if (!confirm('删除待办「' + t.title + '」？历史打卡记录会保留。')) return;
-        var target = null;
-        S.todos.forEach(function (x) { if (x.id === t.id) target = x; });
-        if (target) { target.del = true; target.u = now(); }
-        touch();
-        renderToday();
-        scheduleSync();
-        toast('已删除');
-      });
-
       list.appendChild(row);
     });
   }
 
+  function renderToday() {
+    var t = today(), key = ds(t), d = peek(key);
+    var words = d ? (d.words || 0) : 0;
+    var active = isActive(key);
+    var st = streak();
+
+    var dt = $('todayDate');
+    if (dt) dt.textContent = (t.getMonth() + 1) + '月' + t.getDate() + '日 · ' + WD[t.getDay()];
+
+    var lab = $('heroLabel');
+    if (lab) lab.textContent = active ? '今天已背' : '今天还没开始';
+
+    var wn = $('wordNum');
+    if (wn) wn.textContent = words;
+
+    var sp = $('streakPill');
+    if (sp) sp.textContent = '连续 ' + st + ' 天';
+
+    var btn = $('checkinBtn');
+    if (btn) {
+      if (active) {
+        btn.classList.add('done');
+        btn.textContent = '今天已完成 · 点一下修改';
+      } else {
+        btn.classList.remove('done');
+        btn.textContent = '打卡';
+      }
+    }
+
+    var g = goalWords(), lw = learned();
+    var lt = $('learnTxt');
+    if (lt) lt.textContent = fmtNum(lw) + ' / ' + fmtNum(g);
+    var lb = $('learnBar');
+    if (lb) lb.style.width = Math.min(100, lw / g * 100) + '%';
+
+    var s1 = $('stStreak'); if (s1) s1.textContent = st;
+    var s2 = $('stAvg'); if (s2) s2.textContent = Math.round(avg7());
+
+    /* 还需天数：有实测速度用实测，否则不硬编一个数 */
+    var s3 = $('stLeft');
+    if (s3) {
+      var rest = Math.max(0, g - lw);
+      if (lw <= 0) { s3.textContent = '—'; }
+      else if (rest === 0) { s3.textContent = '0'; }
+      else {
+        var spi = speedInfo();
+        s3.textContent = Math.max(1, Math.ceil(rest / spi.perDay));
+      }
+    }
+
+    renderWeek();
+    renderTodos();
+    /* 数字变了（0 → 1,180 等）会改变 hero 的宽度，碰撞结论要重算 */
+    syncHeroAlign();
+  }
+
+  /* ================= 渲染：回顾 ================= */
   function renderReview() {
     var g = goalWords(), lw = learned();
     var pct = Math.min(100, Math.round(lw / g * 100));
 
-    $('stTotalWords').textContent = totalWords().toLocaleString();
-    $('stDays').textContent = studyDays();
-    $('stAvg').textContent = Math.round(avg7());
+    var a = $('rvTotal'); if (a) a.textContent = fmtNum(totalWords());
+    var b = $('rvDays'); if (b) b.textContent = studyDays();
+    var c = $('rvAvg'); if (c) c.textContent = Math.round(avg7());
 
-    $('pgDone').textContent = lw.toLocaleString();
-    $('pgGoal').textContent = g.toLocaleString();
-    $('pgLeft').textContent = '剩 ' + Math.max(0, g - lw).toLocaleString();
-    $('pctPill').textContent = pct + '%';
-    $('pgBar').style.width = pct + '%';
+    var d1 = $('rvDone'); if (d1) d1.textContent = fmtNum(lw);
+    var d2 = $('rvGoal'); if (d2) d2.textContent = fmtNum(g);
+    var d3 = $('rvLeft'); if (d3) d3.textContent = '剩 ' + fmtNum(Math.max(0, g - lw));
+    var d4 = $('rvPct'); if (d4) d4.textContent = pct + '%';
+    var d5 = $('rvBar'); if (d5) d5.style.width = pct + '%';
 
     renderForecast(g, lw);
     renderHeatmap();
     renderLast7();
   }
 
-  /* 预测文案：说清「这个速度是哪来的」，别让估算冒充实测 */
   function renderForecast(g, lw) {
-    var fc = $('forecast');
+    var fc = $('rvForecast');
+    if (!fc) return;
     var rest = Math.max(0, g - lw);
 
     if (lw <= 0) {
-      fc.innerHTML = '在你的 app 里看一眼「已掌握」多少，点上面的数字填进来，这里就能算出还要多久。';
+      fc.textContent = '在你的 app 里看一眼「已掌握」多少，点下来填进来，这里就能算出还要多久。';
       return;
     }
     if (rest === 0) {
@@ -662,11 +825,12 @@
 
   function renderHeatmap() {
     var box = $('heatmap');
+    if (!box) return;
     box.innerHTML = '';
-    // 列数跟着容器算，18 周在手机上只剩 2/3 宽，看上去像没画满
-    var cellW = 13, gap = 3, pad = 2;
-    var avail = (box.clientWidth || 320) - pad * 2;
-    var WEEKS = Math.max(10, Math.min(26, Math.floor((avail + gap) / (cellW + gap))));
+
+    var cellW = 13, gap = 4, pad = 2;
+    var avail = (box.clientWidth || 340) - pad * 2;
+    var WEEKS = Math.max(8, Math.min(26, Math.floor((avail + gap) / (cellW + gap))));
     var t = today();
     var end = new Date(t);
     end.setDate(end.getDate() + (6 - end.getDay()));
@@ -676,7 +840,7 @@
 
     for (var w = 0; w < WEEKS; w++) {
       var col = document.createElement('div');
-      col.className = 'hm-col';
+      col.className = 'phm-c';
       col.style.gap = gap + 'px';
       for (var i = 0; i < 7; i++) {
         var d = new Date(start);
@@ -686,11 +850,16 @@
         var future = d > t;
         var lv = levelOf(rec ? rec.words : 0, isActive(key));
         var cell = document.createElement('div');
-        cell.className = 'hm-cell' + (future ? '' : (lv ? ' l' + lv : '')) + (key === ds(t) ? ' today' : '');
-        cell.style.width = cellW + 'px';
-        cell.style.height = cellW + 'px';
-        if (future) { cell.style.visibility = 'hidden'; }
-        else {
+        if (future) {
+          cell.className = 'hm-cell';
+          cell.style.cssText = 'width:' + cellW + 'px;height:' + cellW + 'px;' +
+            'border-radius:3px;background:var(--line);visibility:hidden;flex:none';
+        } else {
+          cell = document.createElement('button');
+          cell.type = 'button';
+          cell.className = 'phm-cell' + (lv ? ' l' + lv : '') + (key === ds(t) ? ' td' : '');
+          cell.style.width = cellW + 'px';
+          cell.style.height = cellW + 'px';
           cell.title = key + ' · ' + (rec && rec.words ? rec.words + ' 词' : (isActive(key) ? '已学习' : '无记录'));
           (function (k) { cell.addEventListener('click', function () { openSheet(k); }); })(key);
         }
@@ -698,46 +867,49 @@
       }
       box.appendChild(col);
     }
-    box.scrollLeft = box.scrollWidth;
-    var wk = $('hmWeeks');
+    var wk = $('rvWeeks');
     if (wk) wk.textContent = '近 ' + WEEKS + ' 周';
   }
 
   function renderLast7() {
-    var box = $('last7');
+    var box = $('rvLast7');
+    if (!box) return;
     var rows = [];
     for (var i = 6; i >= 0; i--) {
       var d = shift(-i), key = ds(d), rec = peek(key);
-      var w = rec ? rec.words : 0;
+      var w = rec ? (rec.words || 0) : 0;
       var mark = isActive(key) ? '✓' : '·';
-      rows.push('<div style="display:flex;justify-content:space-between">' +
-        '<span>' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + WD_S[d.getDay()] + '</span>' +
-        '<span style="color:' + (w ? 'var(--ink)' : 'var(--muted)') + ';font-variant-numeric:tabular-nums">' +
-        mark + '  ' + (w ? w + ' 词' : '—') + '</span></div>');
+      rows.push('<div><span>' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + WD_S[d.getDay()] + '</span>'
+        + '<b' + (w ? '' : ' class="dim"') + '>' + mark + '  ' + (w ? w + ' 词' : '—') + '</b></div>');
     }
     box.innerHTML = rows.join('');
   }
 
+  /* ================= 渲染：设置 ================= */
   function renderSettings() {
-    $('goalInput').value = goalWords();
-    $('learnedInput').value = learned();
-    $('targetInput').value = S.config.dailyTarget;
-    $('gistInput').value = syncCfg.gistId;
-    $('tokenInput').value = syncCfg.token;
+    var gi = $('goalInput'); if (gi) gi.value = goalWords();
+    var li = $('learnedInput'); if (li) li.value = learned();
+    var ti = $('targetInput'); if (ti) ti.value = S.config.dailyTarget;
+    var gs = $('gistInput'); if (gs) gs.value = syncCfg.gistId;
+    var tk = $('tokenInput'); if (tk) tk.value = syncCfg.token;
 
     var det = $('syncDetail');
-    if (!syncCfg.gistId || !syncCfg.token) {
-      det.textContent = '尚未配置。配置后手机和电脑可共享同一份记录。';
-    } else if (isDirty()) {
-      det.textContent = '有改动还没传上去，联网后会自动重试。';
-    } else {
-      det.textContent = '已连接 · ' + syncCfg.gistId.slice(0, 8) + '… 手机和电脑共用这一份数据。';
+    if (det) {
+      if (!syncCfg.gistId || !syncCfg.token) {
+        det.textContent = '尚未配置。配置后手机和电脑可共享同一份记录。';
+      } else if (isDirty()) {
+        det.textContent = '有改动还没传上去，联网后会自动重试。';
+      } else {
+        det.textContent = '已连接 · ' + syncCfg.gistId.slice(0, 8) + '… 手机和电脑共用这一份数据。';
+      }
     }
+    renderThemePickers();
+    renderThemeNow();
   }
 
   function renderAll() { renderToday(); renderReview(); renderSettings(); }
 
-  /* ================= Sheet ================= */
+  /* ================= 弹窗 ================= */
   var sheetKey = null;
 
   function openSheet(key) {
@@ -745,32 +917,78 @@
     var rec = peek(key);
     var d = parseDay(key);
     var isToday = key === ds(today());
-    $('sheetTitle').textContent = (d.getMonth() + 1) + '月' + d.getDate() + '日 · ' + WD[d.getDay()];
-    $('sheetSub').textContent = isToday ? '今天' : '补录 / 修改历史记录';
-    $('sheetWords').value = rec ? rec.words : 0;
-    $('sheetManual').checked = rec ? !!rec.manual : false;
+    var st = $('sheetTitle');
+    if (st) st.textContent = (d.getMonth() + 1) + '月' + d.getDate() + '日 · ' + WD[d.getDay()];
+    var ss = $('sheetSub');
+    if (ss) ss.textContent = isToday ? '今天' : '补录 / 修改历史记录';
+    var sw = $('sheetWords');
+    if (sw) sw.value = rec ? (rec.words || 0) : 0;
 
-    // 「已掌握」只对今天开放：历史那天你填不出当时的累计数，填了反而把曲线带歪
     var g = goalWords(), lw = learned();
-    $('sheetLearnWrap').hidden = !isToday;
-    $('sheetLearn').value = lw;
-    $('sheetLearnTotal').textContent = g.toLocaleString();
+    var wrap = $('sheetLearnWrap');
+    if (wrap) wrap.hidden = !isToday;
+    var sl = $('sheetLearn');
+    if (sl) sl.value = lw;
+    var slt = $('sheetLearnTotal');
+    if (slt) slt.textContent = fmtNum(g);
 
-    var m = $('mask');
-    m.hidden = false;
-    requestAnimationFrame(function () { m.classList.add('show'); });
+    var mi = $('sheetManualIco');
+    if (mi) mi.classList.toggle('on', !!(rec && rec.manual));
+
+    var m = $('mask'), s = $('sheet');
+    if (m) m.classList.add('show');
+    if (s) s.classList.add('show');
+    drawClock();
   }
   function closeSheet() {
-    var m = $('mask');
-    m.classList.remove('show');
-    setTimeout(function () { m.hidden = true; }, 200);
+    var m = $('mask'), s = $('sheet');
+    if (m) m.classList.remove('show');
+    if (s) s.classList.remove('show');
+  }
+
+  /* ================= 重复规则浮层 ================= */
+  var curRule = { type: 'daily', weekday: 3, day: 1 };
+
+  function rulePreview() {
+    if (curRule.type === 'daily') return '每天';
+    if (curRule.type === 'weekly') return '每周' + WD_S[curRule.weekday];
+    return '每月 ' + curRule.day + ' 号';
+  }
+
+  function syncRuleUI() {
+    var segs = document.querySelectorAll('#prepSeg span');
+    segs.forEach(function (s) { s.classList.toggle('on', s.dataset.rule === curRule.type); });
+
+    var prep = $('prep');
+    if (prep) {
+      prep.classList.remove('mode-w', 'mode-m');
+      if (curRule.type === 'weekly') prep.classList.add('mode-w');
+      if (curRule.type === 'monthly') prep.classList.add('mode-m');
+    }
+    var wds = document.querySelectorAll('#prepWd span');
+    wds.forEach(function (s) { s.classList.toggle('on', Number(s.dataset.wd) === curRule.weekday); });
+
+    var dn = $('prepDayNum');
+    if (dn) dn.textContent = curRule.day;
+
+    var hint = $('prepHint');
+    if (hint) hint.textContent = rulePreview();
+
+    var rb = $('ruleBtn');
+    if (rb) rb.textContent = rulePreview() + ' ▾';
+  }
+
+  function closePrep() {
+    var box = $('paddBox');
+    if (box) box.classList.remove('open');
   }
 
   /* ================= 交互 ================= */
   function bumpStreak() {
-    var el = $('streakNum');
-    el.classList.add('bump');
-    setTimeout(function () { el.classList.remove('bump'); }, 280);
+    var el = $('streakPill');
+    if (!el) return;
+    el.style.transform = 'scale(1.12)';
+    setTimeout(function () { el.style.transform = ''; }, 220);
   }
 
   function addWords(n) {
@@ -785,8 +1003,43 @@
     scheduleSync();
   }
 
+  /* 打卡动效：每套主题一套专属动画，数据用当下的真实值。
+     动效缺失（fx.js 没加载 / 该主题没配）时静默跳过，不影响打卡。
+     取 currentThemeId 而不是 S.config.theme：前者是「此刻真正渲染的」，
+     后者要等 touch() 落盘才更新，预览态下会拿到旧值。 */
+  function fxCheckin() {
+    if (!window.SB_FX) return;
+    var key = ds(today()), d = peek(key) || {};
+    window.SB_FX.play(currentThemeId || S.config.theme, {
+      words: d.words || 0,
+      streak: streak(),
+      pct: Math.min(100, Math.round(learned() / goalWords() * 100))
+    });
+  }
+
+  function switchView(v) {
+    document.querySelectorAll('.tab').forEach(function (x) {
+      x.classList.toggle('on', x.dataset.view === v);
+    });
+    ['today', 'review', 'settings'].forEach(function (k) {
+      var el = $('view-' + k);
+      if (el) el.hidden = (k !== v);
+    });
+    window.scrollTo(0, 0);
+    if (v === 'review') renderReview();
+    if (v === 'settings') renderSettings();
+  }
+
+  function drawClock() {
+    var d = new Date();
+    var el = $('clock');
+    if (el) el.textContent = d.getHours() + ':' + pad(d.getMinutes());
+  }
+
   function bind() {
-    $('syncBtn').addEventListener('click', function () {
+    /* 顶部同步按钮 */
+    var sb = $('syncBtn');
+    if (sb) sb.addEventListener('click', function () {
       if (!syncCfg.gistId || !syncCfg.token) {
         toast('先在设置里填 Gist ID 和 Token');
         switchView('settings');
@@ -797,70 +1050,141 @@
       });
     });
 
-    $('checkinBtn').addEventListener('click', function () {
+    /* 打卡 */
+    var cb = $('checkinBtn');
+    if (cb) cb.addEventListener('click', function () {
       var key = ds(today());
-      var d = dayOf(key, false);
+      var d = peek(key);
       var active = isActive(key);
       if (!active) {
         var dd = dayOf(key, true);
         dd.manual = true;
         dd.u = now();
         touch(); renderAll(); bumpStreak();
+        fxCheckin();
         toast('已打卡 · 连续 ' + streak() + ' 天');
         scheduleSync();
       } else if (active && (d.words || 0) === 0 && (d.done || []).length === 0) {
-        // 只有「空打卡」才允许一键取消；已经有词数的记录不让这个按钮抹掉
         d.manual = false; d.u = now();
         touch(); renderAll();
         toast('已取消今天的打卡');
         scheduleSync();
       } else {
-        // 已经记了东西：不撒谎也不清空，直接把面板打开让他改
         openSheet(key);
       }
     });
 
+    /* 快捷加词 */
     document.querySelectorAll('[data-add]').forEach(function (b) {
       b.addEventListener('click', function () { addWords(Number(b.dataset.add)); });
     });
+    var ub = $('undoBtn');
+    if (ub) ub.addEventListener('click', function () { addWords(-20); });
+    var cbt = $('customBtn');
+    if (cbt) cbt.addEventListener('click', function () { openSheet(ds(today())); });
 
-    $('undoBtn').addEventListener('click', function () { addWords(-20); });
-    $('customBtn').addEventListener('click', function () { openSheet(ds(today())); });
-    $('wordLabel').addEventListener('click', function () { openSheet(ds(today())); });
-    $('learnRow').addEventListener('click', function () { openSheet(ds(today())); });
+    /* 主题选择：设置页小色板 + 换风格面板 */
+    document.addEventListener('click', function (e) {
+      var th = e.target.closest('[data-th]');
+      if (th) {
+        applyTheme(th.dataset.th);
+        toast('已换到 ' + (themeById(th.dataset.th) || {}).name);
+        return;
+      }
+    });
+    var tb = $('themeBtn');
+    if (tb) tb.addEventListener('click', function () {
+      var p = $('thPanel'), m = $('thMask');
+      if (p) p.classList.add('show');
+      if (m) m.classList.add('show');
+    });
+    function closeThemePanel() {
+      var p = $('thPanel'), m = $('thMask');
+      if (p) p.classList.remove('show');
+      if (m) m.classList.remove('show');
+    }
+    var tc = $('thClose'); if (tc) tc.addEventListener('click', closeThemePanel);
+    var tm = $('thMask'); if (tm) tm.addEventListener('click', closeThemePanel);
 
-    var ruleSel = $('todoRule');
-    ruleSel.addEventListener('change', function () {
-      $('subWeekly').hidden = ruleSel.value !== 'weekly';
-      $('subMonthly').hidden = ruleSel.value !== 'monthly';
+    /* 重复规则浮层 */
+    var rb = $('ruleBtn');
+    if (rb) rb.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var box = $('paddBox');
+      var open = box.classList.contains('open');
+      document.querySelectorAll('.padd').forEach(function (x) { x.classList.remove('open'); });
+      if (!open) box.classList.add('open');
     });
 
+    document.querySelectorAll('#prepSeg span').forEach(function (s) {
+      s.addEventListener('click', function (e) {
+        e.stopPropagation();
+        curRule.type = s.dataset.rule;
+        syncRuleUI();
+      });
+    });
+    document.querySelectorAll('#prepWd span').forEach(function (s) {
+      s.addEventListener('click', function (e) {
+        e.stopPropagation();
+        curRule.weekday = Number(s.dataset.wd);
+        syncRuleUI();
+      });
+    });
+    var dm = $('dayMinus');
+    if (dm) dm.addEventListener('click', function (e) {
+      e.stopPropagation();
+      curRule.day = curRule.day <= 1 ? 31 : curRule.day - 1;
+      syncRuleUI();
+    });
+    var dp = $('dayPlus');
+    if (dp) dp.addEventListener('click', function (e) {
+      e.stopPropagation();
+      curRule.day = curRule.day >= 31 ? 1 : curRule.day + 1;
+      syncRuleUI();
+    });
+
+    /* 点空白收起浮层 */
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest('.padd')) closePrep();
+    });
+
+    /* 添加待办 */
     function addTodo() {
       var inp = $('todoInput');
       var title = inp.value.trim();
       if (!title) { inp.focus(); return; }
-      var rule = { type: ruleSel.value };
-      if (rule.type === 'weekly') rule.weekday = Number($('todoWeekday').value);
-      if (rule.type === 'monthly') rule.day = Number($('todoDay').value) || 1;
+      var rule = { type: curRule.type };
+      if (rule.type === 'weekly') rule.weekday = curRule.weekday;
+      if (rule.type === 'monthly') rule.day = curRule.day;
       S.todos.push({ id: uid(), title: title, rule: rule, u: now() });
       inp.value = '';
-      touch(); renderToday();
+      touch(); renderToday(); closePrep();
       toast('已添加 · ' + ruleText(rule));
       scheduleSync();
     }
-    $('todoAdd').addEventListener('click', addTodo);
-    $('todoInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') addTodo(); });
+    var ta = $('todoAdd');
+    if (ta) ta.addEventListener('click', addTodo);
+    var tin = $('todoInput');
+    if (tin) tin.addEventListener('keydown', function (e) { if (e.key === 'Enter') addTodo(); });
 
-    $('sheetCancel').addEventListener('click', closeSheet);
-    $('mask').addEventListener('click', function (e) { if (e.target.id === 'mask') closeSheet(); });
-    $('sheetSave').addEventListener('click', function () {
+    /* 弹窗 */
+    var sc = $('sheetCancel'); if (sc) sc.addEventListener('click', closeSheet);
+    var mk = $('mask'); if (mk) mk.addEventListener('click', closeSheet);
+    var smw = $('sheetManualWrap');
+    if (smw) smw.addEventListener('click', function () {
+      var i = $('sheetManualIco');
+      if (i) i.classList.toggle('on');
+    });
+
+    var sv = $('sheetSave');
+    if (sv) sv.addEventListener('click', function () {
       if (!sheetKey) return;
       var d = dayOf(sheetKey, true);
       d.words = Math.max(0, parseInt($('sheetWords').value, 10) || 0);
-      d.manual = $('sheetManual').checked;
+      var ico = $('sheetManualIco');
+      d.manual = !!(ico && ico.classList.contains('on'));
       d.u = now();
 
-      // 同一次保存里把「已掌握」也更新掉，少一次开关面板
       var isToday = sheetKey === ds(today());
       if (isToday) {
         var lv = parseInt($('sheetLearn').value, 10);
@@ -872,18 +1196,22 @@
       scheduleSync();
     });
 
+    /* 底部切换 */
     document.querySelectorAll('.tab').forEach(function (tab) {
       tab.addEventListener('click', function () { switchView(tab.dataset.view); });
     });
 
-    $('goalInput').addEventListener('change', function () {
+    /* 设置项 */
+    var gi = $('goalInput');
+    if (gi) gi.addEventListener('change', function () {
       var v = parseInt(this.value, 10);
       if (!v || v < 100) { this.value = goalWords(); return; }
       S.config.goalWords = v;
       touch('goal'); renderAll(); toast('词书总量已更新');
       scheduleSync();
     });
-    $('learnedInput').addEventListener('change', function () {
+    var li = $('learnedInput');
+    if (li) li.addEventListener('change', function () {
       var v = parseInt(this.value, 10);
       if (isNaN(v) || v < 0) { this.value = learned(); return; }
       if (v > goalWords()) { this.value = learned(); toast('不能超过词书总量'); return; }
@@ -891,7 +1219,8 @@
       renderAll(); toast('已掌握更新为 ' + v + ' 词');
       scheduleSync();
     });
-    $('targetInput').addEventListener('change', function () {
+    var ti = $('targetInput');
+    if (ti) ti.addEventListener('change', function () {
       var v = parseInt(this.value, 10);
       if (!v || v < 1) { this.value = S.config.dailyTarget; return; }
       S.config.dailyTarget = v;
@@ -899,23 +1228,26 @@
       scheduleSync();
     });
 
-    $('saveSync').addEventListener('click', function () {
-      var g = gistIdFromInput($('gistInput').value || syncCfg.gistId);
-      var tk = $('tokenInput').value.trim();
-      if (!g) { toast('缺少 Gist ID，可展开「手动修改 Gist ID」填写'); return; }
+    /* 云同步 */
+    var ss = $('saveSync');
+    if (ss) ss.addEventListener('click', function () {
+      var gEl = $('gistInput'), tEl = $('tokenInput');
+      var g = gistIdFromInput((gEl && gEl.value) || syncCfg.gistId);
+      var tk = ((tEl && tEl.value) || '').trim();
+      if (!g) { toast('缺少 Gist ID'); return; }
       if (!tk) { toast('请填 Token'); return; }
       syncCfg.gistId = g;
       syncCfg.token = tk;
       saveSync();
       setStatus('busy', '同步中');
-      syncNow('save').then(function () {
-        renderSettings();
-      });
+      syncNow('save').then(function () { renderSettings(); });
     });
 
-    $('testSync').addEventListener('click', function () {
-      var g = gistIdFromInput($('gistInput').value || syncCfg.gistId);
-      var tk = $('tokenInput').value.trim();
+    var ts = $('testSync');
+    if (ts) ts.addEventListener('click', function () {
+      var gEl = $('gistInput'), tEl = $('tokenInput');
+      var g = gistIdFromInput((gEl && gEl.value) || syncCfg.gistId);
+      var tk = ((tEl && tEl.value) || '').trim();
       if (!g || !tk) { toast('Gist ID 和 Token 都要填'); return; }
       var bak = { gistId: syncCfg.gistId, token: syncCfg.token };
       syncCfg.gistId = g; syncCfg.token = tk;
@@ -930,7 +1262,6 @@
         setStatus('ok', '连接正常');
         toast(f ? '连接正常，已有数据文件' : '连接正常，首次同步会自动创建文件');
       }).catch(function (err) {
-        // 测试失败要把配置还原，并把状态清干净，避免误导
         syncCfg.gistId = bak.gistId; syncCfg.token = bak.token;
         var m = err && err.message;
         if (m === 'TOKEN') { setStatus('err', 'Token 无效'); toast('Token 无效或权限不足'); }
@@ -945,7 +1276,8 @@
       });
     });
 
-    $('clearSync').addEventListener('click', function () {
+    var cs = $('clearSync');
+    if (cs) cs.addEventListener('click', function () {
       if (!confirm('断开同步？本机数据会保留，只是不再上传。')) return;
       syncCfg.gistId = ''; syncCfg.token = '';
       saveSync();
@@ -954,7 +1286,9 @@
       toast('已断开');
     });
 
-    $('exportBtn').addEventListener('click', function () {
+    /* 导入导出 */
+    var eb = $('exportBtn');
+    if (eb) eb.addEventListener('click', function () {
       var blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' });
       var a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -964,8 +1298,10 @@
       toast('已导出');
     });
 
-    $('importBtn').addEventListener('click', function () { $('fileInput').click(); });
-    $('fileInput').addEventListener('change', function (e) {
+    var ib = $('importBtn');
+    if (ib) ib.addEventListener('click', function () { $('fileInput').click(); });
+    var fi = $('fileInput');
+    if (fi) fi.addEventListener('change', function (e) {
       var f = e.target.files && e.target.files[0];
       if (!f) return;
       var r = new FileReader();
@@ -976,6 +1312,7 @@
           if (!confirm('导入会覆盖本机数据（不会删云端），确定？')) return;
           S = normalize(obj);
           saveLocal(); markDirty(); renderAll();
+          applyTheme(S.config.theme, true);
           toast('导入成功');
           scheduleSync();
         } catch (err) { alert('读不出来：' + err.message); }
@@ -984,15 +1321,16 @@
       e.target.value = '';
     });
 
-    $('clearBtn').addEventListener('click', function () {
+    var clb = $('clearBtn');
+    if (clb) clb.addEventListener('click', function () {
       if (!confirm('清空这台设备上的记录？\n云端数据不受影响，下次同步会重新拉回来。')) return;
       localStorage.removeItem(K_DATA);
       S = blank(); saveLocal(); renderAll();
+      applyTheme(S.config.theme, true);
       toast('已清空本机');
     });
 
-    // 页面隐藏（锁屏 / 切走 / 关标签）前立刻把改动推上去；
-    // 回到前台时无条件拉一次远端，这样另一台设备的记录能马上看到
+    /* 前后台切换 */
     document.addEventListener('visibilitychange', function () {
       if (document.hidden) {
         if (isDirty()) syncNow('hidden', true);
@@ -1005,18 +1343,16 @@
     window.addEventListener('pagehide', function () {
       if (isDirty()) syncNow('pagehide', true);
     });
-  }
 
-  function switchView(v) {
-    document.querySelectorAll('.tab').forEach(function (x) {
-      x.classList.toggle('on', x.dataset.view === v);
+    /* 横竖屏或窗口尺寸变化时，热力图列数要跟着重算 */
+    var rzTimer = null;
+    window.addEventListener('resize', function () {
+      clearTimeout(rzTimer);
+      rzTimer = setTimeout(function () {
+        var rv = $('view-review');
+        if (rv && !rv.hidden) renderHeatmap();
+      }, 180);
     });
-    ['today', 'review', 'settings'].forEach(function (k) {
-      $('view-' + k).hidden = (k !== v);
-    });
-    window.scrollTo(0, 0);
-    if (v === 'review') renderReview();
-    if (v === 'settings') renderSettings();
   }
 
   /* ================= 启动 ================= */
@@ -1024,7 +1360,24 @@
   loadSync();
   var paired = consumePairLink();
   bind();
+
+  /* 对外暴露：给自动化验收与调试用，不影响正常运行 */
+  window.applyThemePublic = function (id) { applyTheme(id, true); };
+  window.switchViewPublic = switchView;
+  window.openSheetPublic = function () { openSheet(ds(today())); };
+  window.renderAllPublic = renderAll;
+  window.SB_DEBUG = {
+    state: function () { return S; },
+    theme: function () { return currentThemeId; },
+    streak: streak, addWords: addWords
+  };
+
+  /* 主题先落地，再渲染内容，避免一帧无样式 */
+  applyTheme(S.config.theme, true);
   renderAll();
+  drawClock();
+  syncRuleUI();
+  setInterval(drawClock, 30000);
 
   if (syncCfg.gistId && syncCfg.token) {
     if (!paired) setStatus(isDirty() ? 'warn' : 'ok', isDirty() ? '待同步' : '已连接');
@@ -1034,7 +1387,6 @@
     setStatus('idle', '未连接');
   }
 
-  // 只在 https 或 localhost 注册（file:// 与局域网 IP 不支持 SW）
   var canSW = 'serviceWorker' in navigator &&
     (location.protocol === 'https:' ||
      location.hostname === 'localhost' ||

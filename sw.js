@@ -1,5 +1,5 @@
 /* 离线缓存：第一次打开后，断网 / 代理失效也能打开并打卡 */
-var CACHE = 'studybench-v11';
+var CACHE = 'studybench-v12';
 var ASSETS = ['./', './index.html', './app.js', './themes.js', './fx.js', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', function (e) {
@@ -35,7 +35,13 @@ self.addEventListener('fetch', function (e) {
 
   if (isCode) {
     e.respondWith(
-      fetch(e.request).then(function (res) {
+      /* 【曾经的坑】这里原本是 fetch(e.request)，走的是默认 cache mode = default，
+         会命中 GitHub Pages 的 `cache-control: max-age=600`（10 分钟）。
+         后果：部署新版后用户刷新，旧 SW 把旧 HTML 从 HTTP 缓存里喂回来，
+         页面还显示旧版本号，必须先等 10 分钟或强刷才生效。
+         改成 cache:'no-cache'：强制带 If-None-Match 去服务器确认，
+         没变才用 304 复用，变了立刻拿新的 —— 这才是真正的"网络优先"。 */
+      fetch(new Request(e.request, { cache: 'no-cache' })).then(function (res) {
         if (res && res.status === 200 && url.origin === location.origin) {
           var copy = res.clone();
           caches.open(CACHE).then(function (c) { c.put(e.request, copy); });

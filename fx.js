@@ -1646,8 +1646,14 @@ MV.petal=function(fx,t){
       +[c.ac,c.alt,'#F2C6B8'][i%3]+';left:50%;top:78%;animation-delay:'
       +(R()*360)+'ms');
 
-  // 唇印落在统计栏与按钮之间的留白带（415–493）
-  var lip=put(fx,'lipP','--c:'+c.ac+';right:26px;bottom:46px;animation-delay:640ms');
+  /* 唇印落在「已掌握」进度条那一带的左段空白：不压左侧「已掌握」文字（x 14–43），
+     不压右侧百分比（x 248–298）。
+     位置由设计稿换算而来：设计稿进度条顶 376.5、唇印视觉底 373.1（贴条上方 3.4px），
+     真实布局进度条顶 357.9 → 唇印视觉底取 354.5 → 未缩放盒底 357.4 → bottom 191px。
+     水平沿用设计稿的 22% - 18px：两边进度条宽度几乎一致（280 vs 283），
+     换算后唇印仍落在条宽 22% 处。scale .78 是为了不让它比条还厚。 */
+  var lip=put(fx,'lipP','--c:'+c.ac+';left:calc(22% - 18px);bottom:191px;'
+    +'transform-origin:50% 50%;scale:.78;animation-delay:640ms');
   for(var k=0;k<4;k++) put(lip,'','','','i');
 
   var mid=box(fx);

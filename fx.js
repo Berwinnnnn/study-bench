@@ -933,6 +933,21 @@ function viewOf(){
   }
   return null;
 }
+/* 真实控件 → 舞台设计坐标（312×548）。
+   舞台是「按屏宽等比缩放的固定 548 高画布」：窗口比画布矮时 fit() 把 top 夹成 0，
+   画布下半截溢出屏幕，这时写死 bottom:xxx 的层会跟着掉出可视区——
+   实测 410×540 下 s21 唇印比「已掌握」进度条低 106px、More Love 整个跑出屏幕。
+   而且 .view 是锁高的滚动容器，控件位置随滚动变，bottom 根本追不上。
+   凡是要跟真实控件对齐的层，都按这里量到的坐标放，别写死。 */
+function anchorOf(sel){
+  if(!stage) return null;
+  var el=document.querySelector(sel);
+  if(!el) return null;
+  var sr=stage.getBoundingClientRect(), b=el.getBoundingClientRect();
+  if(!sr.width) return null;
+  var k=sr.width/312;
+  return {l:(b.left-sr.left)/k, t:(b.top-sr.top)/k, w:b.width/k, h:b.height/k};
+}
 /* 镜头推近：内容被顶得一缩，和整块位移是两回事，叠加才出纵深 */
 function iPunch(t,o){
   o=o||{};
@@ -1646,18 +1661,42 @@ MV.petal=function(fx,t){
       +[c.ac,c.alt,'#F2C6B8'][i%3]+';left:50%;top:78%;animation-delay:'
       +(R()*360)+'ms');
 
-  /* 唇印落在「已掌握」进度条那一带的左段空白：不压左侧「已掌握」文字（x 14–43），
-     不压右侧百分比（x 248–298）。
-     位置由设计稿换算而来：设计稿进度条顶 376.5、唇印视觉底 373.1（贴条上方 3.4px），
-     真实布局进度条顶 357.9 → 唇印视觉底取 354.5 → 未缩放盒底 357.4 → bottom 191px。
-     水平沿用设计稿的 22% - 18px：两边进度条宽度几乎一致（280 vs 283），
-     换算后唇印仍落在条宽 22% 处。scale .78 是为了不让它比条还厚。 */
-  var lip=put(fx,'lipP','--c:'+c.ac+';left:calc(22% - 18px);bottom:191px;'
-    +'transform-origin:50% 50%;scale:.78;animation-delay:640ms');
+  /* 唇印必须按真实「已掌握」进度条来放，不能写死 bottom：
+     舞台是固定 548 高的画布，窗口比它矮时画布下半截在屏幕外，
+     bottom 锚点会跟着掉下去（410×540 实测低 106px，直接落在打卡按钮旁边）。
+     量得到进度条就按它算：唇印中心落在条宽 21.6% 处、视觉底贴条顶上方 3.4px
+     → 未缩放盒 top = 条顶 - 26.5（26 是盒高，0.54 是 scale .78 后上下各缩掉的量）。
+     量不到（比如不在今日页）才退回设计稿的固定值。 */
+  var trk=anchorOf('#view-today .ptrack');
+  var lipCss = trk
+    ? '--c:'+c.ac+';left:'+(trk.l+trk.w*0.216-26).toFixed(1)+'px;'
+      +'top:'+(trk.t-26.5).toFixed(1)+'px;transform-origin:50% 50%;scale:.78;animation-delay:640ms'
+    : '--c:'+c.ac+';left:calc(22% - 18px);bottom:191px;'
+      +'transform-origin:50% 50%;scale:.78;animation-delay:640ms';
+  var lip=put(fx,'lipP',lipCss);
   for(var k=0;k<4;k++) put(lip,'','','','i');
 
+  /* More Love 的位置也按真实控件算，别写死 bottom。
+     优先放「打卡按钮」和底部切换栏之间的留白（设计稿原本就是按钮旁的手写体）；
+     那块太窄时退回「统计栏和按钮之间」，再不行才贴按钮上沿。
+     居中仍用 left:50%：.loveT 挂的是 kPopC，关键帧自带 translateX(-50%)，
+     换成 left:0;width:100% 会被这层 -50% 再推半个身位，文字直接出屏。 */
   var mid=box(fx);
-  put(mid,'loveT','--c:'+c.acd+';bottom:34px;left:50%;transform:translateX(-50%);animation-delay:980ms','More Love');
+  var btn=anchorOf('#checkinBtn'), tb=anchorOf('.tabbar'), pst=anchorOf('.pstat');
+  var lvPos='bottom:34px;';
+  if(btn){
+    var below=btn.t+btn.h;
+    var roomBelow = tb ? (tb.t-below) : 60;
+    if(roomBelow>=26){
+      lvPos='top:'+(below+Math.max(4,(roomBelow-19)/2)).toFixed(1)+'px;';
+    }else if(pst){
+      var gTop=pst.t+pst.h, gH=btn.t-gTop;
+      lvPos='top:'+(gTop+Math.max(0,(gH-19)/2)).toFixed(1)+'px;';
+    }else{
+      lvPos='top:'+(btn.t-27).toFixed(1)+'px;';
+    }
+  }
+  put(mid,'loveT','--c:'+c.acd+';'+lvPos+'left:50%;animation-delay:980ms','More Love');
   setTimeout(function(){clear(fx);},2600);return 2600;
 };
 
@@ -1692,7 +1731,12 @@ function fit(){
   if(!ensure()) return;
   var w=layer.clientWidth, h=layer.clientHeight;
   if(!w||!h) return;
-  var s=w/312, sh=548*s;
+  /* 舞台宽度跟 .app 的 max-width:430 对齐。
+     原来直接用窗口宽度，桌面 1366 宽时 scale 变成 4.38，
+     一个 52px 的唇印被放大到 177px，会盖住真实文字（实测压住「已掌握」）。
+     高度不参与缩放，保持「按屏宽等比」；只给宽度夹一个上限。 */
+  var vw=Math.min(w,430);
+  var s=vw/312, sh=548*s;
   stage.style.width='312px';
   stage.style.height='548px';
   stage.style.transform='scale('+s.toFixed(4)+')';

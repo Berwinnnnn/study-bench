@@ -409,13 +409,16 @@ input.pin{text-align:right;padding-top:5px;padding-bottom:5px}
 .scr-today .prep{z-index:20}
 
 /* 打卡动效层：铺满整屏、压在内容之上、不接收点击。
-   动效的坐标系是设计稿手机屏 312×548，由 fx.js 用 transform:scale
-   等比放大到真实屏宽（390/312 = 1.25），所以这里的尺寸只决定可裁切区域。 */
+   动效的坐标系是设计稿 312 宽，由 fx.js 的 fit() 按屏宽等比缩放；
+   高度不写死 548 —— fit() 会在运行时把画布拉到刚好铺满屏高，
+   因此这里的 width/height 只是首帧兜底值，被 JS 覆盖。
+   裁切交给 .fxLayer（overflow:hidden），舞台自己必须 visible，
+   否则画布被拉高后超出 548 的部分（下半屏特效）会被切掉。 */
 .fxLayer{position:fixed;inset:0;z-index:45;overflow:hidden;pointer-events:none;
   opacity:0;transition:opacity .12s}
 .fxLayer.on{opacity:1}
 .fxStage{position:absolute;left:0;top:0;width:312px;height:548px;
-  overflow:hidden;pointer-events:none;transform-origin:0 0}
+  overflow:visible;pointer-events:none;transform-origin:0 0}
 
 /* 提示条 */
 .toast{position:fixed;left:50%;bottom:100px;transform:translate(-50%,10px);z-index:80;
@@ -641,7 +644,7 @@ input.pin{text-align:right;padding-top:5px;padding-bottom:5px}
     </div>
 
     <p class="pnote" style="text-align:center;margin:10px 0 0" id="verTxt">
-      本地优先 · 断网可打卡 · v3</p>
+      本地优先 · 断网可打卡 · v3.1 · build 1124-2140</p>
 
   </section>
 

@@ -272,6 +272,13 @@ button,input,select{font-family:inherit}
   cursor:pointer;transition:transform .1s;flex:none}
 .pbtn:active{transform:scale(.985)}
 .pbtn.done{background:var(--acl);color:var(--acd);box-shadow:none}
+/* 动效播放中：不可点，但外观基本保持原样（别整块变灰——深色底按钮一降透明度
+   就会透出白底变成灰块，很难看）。只留极轻微的呼吸，提示"暂时不响应"。 */
+.pbtn.busy{pointer-events:none;cursor:default;animation:pbtnWait 1.15s ease-in-out infinite}
+.pbtn:disabled{pointer-events:none}
+@keyframes pbtnWait{0%,100%{opacity:1}50%{opacity:.9}}
+@media(prefers-reduced-motion:reduce){.pbtn.busy{animation:none;opacity:.9}}
+[aria-disabled="true"]{cursor:default}
 
 /* 高屏（≥760px）把富余的纵向空间均摊到各区段，避免全堆在打卡按钮上方 */
 @media(min-height:760px){
@@ -644,7 +651,7 @@ input.pin{text-align:right;padding-top:5px;padding-bottom:5px}
     </div>
 
     <p class="pnote" style="text-align:center;margin:10px 0 0" id="verTxt">
-      本地优先 · 断网可打卡 · v3.1 · build 1124-2140</p>
+      本地优先 · 断网可打卡 · v3.3 · build 1124-2325</p>
 
   </section>
 

@@ -1817,11 +1817,16 @@ function fit(){
   layer.style.setProperty('--dh', dh.toFixed(1));
 }
 
+/* 播放一套动效。
+ * 返回值：
+ *   数字 > 0 —— 本次播放的总时长（ms），调用方可据此在播完后恢复交互
+ *   0        —— 未播放（无此主题 / 动效缺失 / 正在播另一套被 busy 锁挡下）
+ * 注意：busy 期间重复调用会被静默挡掉，这是「播完才能再点」的底层保障。 */
 function play(id, data){
-  if(!ensure()) return false;
+  if(!ensure()) return 0;
   var t=BY[id];
-  if(!t || !t.mv || !MV[t.mv.k]) return false;
-  if(layer.dataset.busy==='1') return false;
+  if(!t || !t.mv || !MV[t.mv.k]) return 0;
+  if(layer.dataset.busy==='1') return 0;
 
   fit();
   layer.dataset.busy='1';
@@ -1837,12 +1842,17 @@ function play(id, data){
     layer.classList.remove('on');
     layer.dataset.busy='';
   }, dur+140);
-  return true;
+  return dur + 140;
 }
 
 window.SB_FX={
   play:play,
   fit:fit,
+  /* 是否正在播放（供 UI 加锁：播放期间按钮不可点） */
+  busy:function(){
+    if(!ensure()) return false;
+    return layer.dataset.busy==='1';
+  },
   stop:function(){
     if(!ensure()) return;
     stage.innerHTML='';

@@ -1449,5 +1449,68 @@
         if (reg && reg.update) reg.update().catch(function () { });
       }).catch(function () { });
     });
+
+    /* 【版本自检兜底】
+     * 上面两道（no-cache 请求 + controllerchange 刷新）已经能解决绝大多数情况，
+     * 但仍有一个死角：如果 SW 脚本本身没更新、只是 HTML/JS 变了，
+     * 某些浏览器会认为「SW 没变」而不触发 install/controllerchange，
+     * 页面就可能一直卡在旧版。这里直接向服务器要一次 index.html，
+     * 抠出里面的 build 号与当前页面比对；不一致就清空所有缓存并硬刷一次。
+     * 每个会话只查一次（sessionStorage 记标记），失败静默，不影响正常使用。 */
+    (function versionGuard() {
+      if (sessionStorage.getItem('sb.vg')) return;   /* 本次会话已查过 / 已自愈过 */
+      var el = document.getElementById('verTxt');
+      if (!el) return;
+      var mHere = (el.textContent || '').match(/build\s+(\d{4}-\d{4})/);
+      if (!mHere) return;
+      sessionStorage.setItem('sb.vg', '1');
+      fetch('index.html?_vg=' + Date.now(), { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.text() : ''; })
+        .then(function (t) {
+          if (!t) return;
+          var m = t.match(/build\s+(\d{4}-\d{4})/);
+          if (!m || m[1] === mHere[1]) return;   /* 一致或读不到，什么都不做 */
+          var p = [];
+          if (window.caches && caches.keys) {
+            p.push(caches.keys().then(function (ks) {
+              return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+            }));
+          }
+          if (navigator.serviceWorker.getRegistrations) {
+            p.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+              return Promise.all(rs.map(function (r) { return r.unregister(); }));
+            }));
+          }
+          Promise.all(p).catch(function () { }).then(function () {
+            location.reload();
+          });
+        })
+        .catch(function () { });
+    })();
   }
+
+  /* 【手动强制更新】设置页底部「版本不对？点这里强制更新」
+   * 有些环境下自动检测不灵（比如企业网络代理改写了响应、或者 PWA 装到桌面
+   * 后 SW 生命周期更顽固）。给一个确定性的出口：清空全部缓存 + 注销 SW，
+   * 然后带随机参数硬跳一次，绕过所有层级的缓存。 */
+  var fu = $('forceUpd');
+  if (fu) fu.addEventListener('click', function () {
+    try { sessionStorage.removeItem('sb.vg'); } catch (e) { }
+    var jobs = [];
+    if (window.caches && caches.keys) {
+      jobs.push(caches.keys().then(function (ks) {
+        return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+      }));
+    }
+    if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+      jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+        return Promise.all(rs.map(function (r) { return r.unregister(); }));
+      }));
+    }
+    if (fu.textContent) fu.textContent = '正在清理缓存…';
+    Promise.all(jobs).catch(function () { }).then(function () {
+      /* 加时间戳跳转，确保浏览器不会拿任何一层缓存 */
+      location.replace(location.pathname + '?_fresh=' + Date.now());
+    });
+  });
 })();

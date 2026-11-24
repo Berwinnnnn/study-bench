@@ -728,15 +728,14 @@
     var sp = $('streakPill');
     if (sp) sp.textContent = '连续 ' + st + ' 天';
 
+    /* 今日页的按钮恒为「打卡」：点一次放一次动效。
+     * 「今天已完成 · 点一下修改」这种改文案的做法已废弃 —— 改记录统一走回顾页
+     * （点热力格 / 最近 7 天都可以），今日页只负责「打一次卡、看一次动效」。
+     * 已经打过卡时用 .done 换个底色做状态提示，但文字不变。 */
     var btn = $('checkinBtn');
     if (btn) {
-      if (active) {
-        btn.classList.add('done');
-        btn.textContent = '今天已完成 · 点一下修改';
-      } else {
-        btn.classList.remove('done');
-        btn.textContent = '打卡';
-      }
+      btn.classList.toggle('done', !!active);
+      btn.textContent = '打卡';
     }
 
     var g = goalWords(), lw = learned();
@@ -1006,15 +1005,16 @@
   /* 打卡动效：每套主题一套专属动画，数据用当下的真实值。
      动效缺失（fx.js 没加载 / 该主题没配）时静默跳过，不影响打卡。
      取 currentThemeId 而不是 S.config.theme：前者是「此刻真正渲染的」，
-     后者要等 touch() 落盘才更新，预览态下会拿到旧值。 */
+     后者要等 touch() 落盘才更新，预览态下会拿到旧值。
+     返回播放时长（ms）；0 表示没播（调用方据此决定是否要加锁）。 */
   function fxCheckin() {
-    if (!window.SB_FX) return;
+    if (!window.SB_FX) return 0;
     var key = ds(today()), d = peek(key) || {};
-    window.SB_FX.play(currentThemeId || S.config.theme, {
+    return window.SB_FX.play(currentThemeId || S.config.theme, {
       words: d.words || 0,
       streak: streak(),
       pct: Math.min(100, Math.round(learned() / goalWords() * 100))
-    });
+    }) || 0;
   }
 
   function switchView(v) {
@@ -1050,27 +1050,58 @@
       });
     });
 
-    /* 打卡 */
+    /* 打卡：点一次 = 记一次 + 放一次动效，动效播完才能再点。
+     *
+     * 行为变化（相对旧版）：
+     *   · 旧版：已打卡且有点词 → 弹「修改」浮层；文字也变成「今天已完成 · 点一下修改」
+     *   · 新版：今日页恒为「打卡」，每次点击只放动效，不再弹浮层
+     *           改记录请去回顾页（热力格 / 最近 7 天）
+     *
+     * 三种点击情形都放动效，保证「每次点都有反馈」：
+     *   1) 今天还没打卡      → 记一次打卡（manual）
+     *   2) 已打卡但当天没词  → 取消打卡（保留原来可撤销的行为）
+     *   3) 已打卡且有点词    → 只放动效，不重复记
+     * 播放期间用 locked 锁住按钮 + 加 .busy 让样式变灰，播完自动解锁。 */
     var cb = $('checkinBtn');
+    var fxLocked = false;
     if (cb) cb.addEventListener('click', function () {
+      if (fxLocked) return;
+      if (window.SB_FX && window.SB_FX.busy && window.SB_FX.busy()) return;
+
       var key = ds(today());
       var d = peek(key);
       var active = isActive(key);
+
       if (!active) {
         var dd = dayOf(key, true);
         dd.manual = true;
         dd.u = now();
         touch(); renderAll(); bumpStreak();
-        fxCheckin();
         toast('已打卡 · 连续 ' + streak() + ' 天');
         scheduleSync();
-      } else if (active && (d.words || 0) === 0 && (d.done || []).length === 0) {
+      } else if ((d.words || 0) === 0 && (d.done || []).length === 0) {
         d.manual = false; d.u = now();
         touch(); renderAll();
         toast('已取消今天的打卡');
         scheduleSync();
       } else {
-        openSheet(key);
+        toast('今天已打卡 · 再点只放动效，改记录去「回顾」');
+      }
+
+      /* 动效放在数据落盘之后播，这样动画里的数字就是刚记下的真实值 */
+      var dur = fxCheckin();
+      if (dur > 0) {
+        fxLocked = true;
+        cb.classList.add('busy');
+        /* 用 aria-disabled 而不是原生 disabled：
+         * 原生 disabled 会触发浏览器默认的"灰块"样式，把主题色盖掉，很难看。
+         * 点击拦截交给 pointer-events:none + fxLocked 判断，键盘/读屏靠 aria 感知。 */
+        cb.setAttribute('aria-disabled', 'true');
+        setTimeout(function () {
+          fxLocked = false;
+          cb.classList.remove('busy');
+          cb.removeAttribute('aria-disabled');
+        }, dur);
       }
     });
 
@@ -1393,5 +1424,30 @@
      location.hostname === '127.0.0.1');
   if (canSW) {
     navigator.serviceWorker.register('sw.js').catch(function () { });
+
+    /* 【新版本自动生效】
+     * 问题：SW 更新是在后台装好的，装好后当前页面仍是旧版，用户要刷新两次才看到新东西。
+     * 做法：监听 controllerchange —— 新 SW 接管时自动刷新一次。
+     * 只在「本来就有 SW 在管」的情况下刷新（首次安装不刷，避免无谓闪烁）。 */
+    var hadController = !!navigator.serviceWorker.controller;
+    var reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadController || reloaded) return;
+      reloaded = true;
+      location.reload();
+    });
+
+    /* 主动查一次更新，别等浏览器自己调度（它可能拖到几十分钟后） */
+    navigator.serviceWorker.getRegistration().then(function (reg) {
+      if (reg && reg.update) reg.update().catch(function () { });
+    }).catch(function () { });
+
+    /* 页面重新可见时再查一次，切回 app 就能拿到新版 */
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState !== 'visible') return;
+      navigator.serviceWorker.getRegistration().then(function (reg) {
+        if (reg && reg.update) reg.update().catch(function () { });
+      }).catch(function () { });
+    });
   }
 })();

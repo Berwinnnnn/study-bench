@@ -13,6 +13,10 @@ var R=function(){return Math.random();};
 var DEG=Math.PI/180;
 
 /* ══ 动效样式 ══ */
+/* .fxStage 的宽高与 transform 全由 fit() 在运行时设置（见文件末），
+   这里不要写死 548 —— 画布会被拉长到铺满屏。
+   overflow 必须 visible：舞台本身比屏高时要允许出血；
+   真正的裁切由外层 .fxLayer（position:fixed;inset:0;overflow:hidden）负责。 */
 var CSS = String.raw`.fxStage{position:absolute;left:0;top:0;
   width:312px;height:548px;
   overflow:visible;pointer-events:none;
@@ -882,10 +886,13 @@ function iCrack(fx,c,o){
   var NS='http://www.w3.org/2000/svg';
   var svg=document.createElementNS(NS,'svg');
   svg.setAttribute('class','impCrack');
-  svg.setAttribute('viewBox','0 0 312 548');
+  /* viewBox 高度要跟随舞台实际高度：舞台会被 fit() 拉长到铺满屏，
+     写死 548 时裂纹只裂上半截、下半截全是空白。CSS 的 .impCrack
+     已是 inset:0 + 100%宽高，所以这里只改坐标系范围即可。 */
+  svg.setAttribute('viewBox','0 0 312 '+stageH());
   svg.setAttribute('preserveAspectRatio','none');
   svg.style.cssText='--d:'+(o.d||1300)+'ms;--dl:'+(o.dl||0)+'ms';
-  var cx=o.x==null?156:o.x, cy=o.y==null?248:o.y;
+  var cx=o.x==null?156:o.x, cy=o.y==null?stageH()*0.45:o.y;
   var n=o.n||8;
   function line(pts,w,op){
     var p=document.createElementNS(NS,'polyline');
@@ -941,12 +948,44 @@ function viewOf(){
    凡是要跟真实控件对齐的层，都按这里量到的坐标放，别写死。 */
 function anchorOf(sel){
   if(!stage) return null;
-  var el=document.querySelector(sel);
+  /* 关键：三屏都在 DOM 里，隐藏屏的元素 rect 全是 0。
+     document.querySelector 可能命中隐藏屏里的同名元素（.pstat 在
+     今日页和回顾页各有一个），量出来 top=0/h=0，算出的落点会跑到
+     统计栏里面去（实测 s21 的 More Love 正好压在「近七天均值」上）。
+     所以遍历所有匹配项，取第一个「有真实尺寸」的。 */
+  var list=document.querySelectorAll(sel), el=null;
+  for(var i=0;i<list.length;i++){
+    var r=list[i].getBoundingClientRect();
+    if(r.width||r.height){ el=list[i]; break; }
+  }
   if(!el) return null;
   var sr=stage.getBoundingClientRect(), b=el.getBoundingClientRect();
   if(!sr.width) return null;
   var k=sr.width/312;
   return {l:(b.left-sr.left)/k, t:(b.top-sr.top)/k, w:b.width/k, h:b.height/k};
+}
+/* 舞台当前的设计稿高度。fit() 会把画布从 548 拉长到铺满屏，
+   凡是要「覆盖整块画布」的矢量层（裂纹等）必须用这个值当坐标系高度，
+   否则只画到 548 就断了。 */
+function stageH(){
+  if(!stage) return 548;
+  var h=parseFloat(stage.style.height);
+  return (h>0)? h : 548;
+}
+/* 底部文案统一落位：「贴在底部切换栏(tabbar)上沿之上」。
+   【曾经的 bug】各套主题的底部文案写死 bottom:34px。设计稿里是
+   bottom:88px（相对 548 画布），换成真机约 110px，本来就在 64px 的
+   tabbar 上方。前端当年为了避开 tabbar 把它改小到 34px（≈42px 真机），
+   结果反而躲进 tabbar 底下——More Love 等 14 套文案被整条遮住。
+   现在按 tabbar 的真实顶边反算：bottom 是「距舞台底边的距离」，
+   要落在 tabbar 顶边之上，就得 >= H - tabbarTop（再加一点留白）。 */
+function bottomAboveTab(gapPx){
+  var gap=(gapPx==null?12:gapPx);
+  var tb=anchorOf('.tabbar');
+  var H=stageH();
+  if(tb && tb.h>0) return Math.max(8, Math.round((H-tb.t+gap)*10)/10);
+  /* 拿不到 tabbar 时退回设计稿的 88（等价于原来的安全位置） */
+  return 88;
 }
 /* 镜头推近：内容被顶得一缩，和整块位移是两回事，叠加才出纵深 */
 function iPunch(t,o){
@@ -1357,7 +1396,7 @@ MV.dream=function(fx,t){
       +'width:'+sz+'px;height:'+sz+'px;'
       +'animation-delay:'+(R()*560).toFixed(0)+'ms');
   }
-  put(mid,'softT','--c:'+c.acd+';bottom:34px;left:0;right:0;text-align:center;'
+  put(mid,'softT','--c:'+c.acd+';bottom:'+bottomAboveTab()+';left:0;right:0;text-align:center;'
     +'animation-delay:640ms','晚安，今天很努力');
   setTimeout(function(){clear(fx);},2400);return 2400;
 };
@@ -1375,7 +1414,7 @@ MV.ribbon=function(fx,t){
       +';font-size:'+(9+R()*13).toFixed(0)+'px;left:50%;top:4%;animation-delay:'
       +(R()*520)+'ms',gl[i%gl.length]);
   }
-  put(mid,'softT','--c:'+c.acd+';bottom:34px;left:0;right:0;text-align:center;animation-delay:660ms','今天也乖乖完成了');
+  put(mid,'softT','--c:'+c.acd+';bottom:'+bottomAboveTab()+';left:0;right:0;text-align:center;animation-delay:660ms','今天也乖乖完成了');
   setTimeout(function(){clear(fx);},2400);return 2400;
 };
 
@@ -1412,7 +1451,7 @@ MV.zodiac=function(fx,t){
       +'transform:translateY(-50%) rotate('+(a+0)+'deg);animation-delay:'+(i*44)+'ms');
   }
   put(disc,'coreD','--c:'+c.acd+';animation-delay:560ms');
-  put(mid,'zT','--c:'+c.acd+';bottom:34px;left:0;right:0;text-align:center;animation-delay:900ms','星象已记录');
+  put(mid,'zT','--c:'+c.acd+';bottom:'+bottomAboveTab()+';left:0;right:0;text-align:center;animation-delay:900ms','星象已记录');
   setTimeout(function(){clear(fx);},2200);return 2200;
 };
 
@@ -1449,7 +1488,7 @@ MV.vine=function(fx,t){
   pad.appendChild(b2);
 
   var mid=box(fx);
-  put(mid,'vineT','--c:'+c.acd+';bottom:34px;left:0;right:0;text-align:center;'
+  put(mid,'vineT','--c:'+c.acd+';bottom:'+bottomAboveTab()+';left:0;right:0;text-align:center;'
     +'animation-delay:1000ms','今天长了一点点');
 
   setTimeout(function(){clear(fx);},2400);return 2400;
@@ -1466,7 +1505,7 @@ MV.marker=function(fx,t){
     put(fx,'markB','--c:'+cols[i]+';top:'+yPos[i]+'%;height:'+(i===3?12:20)+'px;'
       +'animation-delay:'+(i*115)+'ms');
   var mid=box(fx);
-  put(mid,'markerT','--c:'+c.acd+';bottom:34px;left:0;right:0;text-align:center;animation-delay:580ms','画好了，今天 '+W+' 词');
+  put(mid,'markerT','--c:'+c.acd+';bottom:'+bottomAboveTab()+';left:0;right:0;text-align:center;animation-delay:580ms','画好了，今天 '+W+' 词');
   setTimeout(function(){clear(fx);},1900);return 1900;
 };
 
@@ -1483,9 +1522,9 @@ MV.icons=function(fx,t){
       +(Math.sin(a*DEG)*d).toFixed(1)+'px;--rot:'+(R()*120-60)+'deg;color:'+g[1]
       +';font-size:'+(15+R()*9).toFixed(0)+'px;animation-delay:'+(i*46)+'ms',g[0]);
   });
-  // 标签靠左下角悬浮，与统计数字和按钮都错开
+  // 标签靠左下角悬浮，与统计数字和按钮都错开；底边同样要抬到 tabbar 之上
   var gw=document.createElement('div');
-  gw.style.cssText='position:absolute;left:18px;bottom:34px;pointer-events:none';
+  gw.style.cssText='position:absolute;left:18px;bottom:'+bottomAboveTab()+';pointer-events:none';
   fx.appendChild(gw);
   put(gw,'goT','--c:'+c.ac+';animation-delay:430ms;font-size:11px;padding:6px 10px','GOOD DAY!');
   setTimeout(function(){clear(fx);},1800);return 1800;
@@ -1517,7 +1556,7 @@ MV.diary=function(fx,t){
   mid.appendChild(svg);
   for(var i=0;i<3;i++)
     put(fx,'steamS','--c:'+c.acd+';left:'+(37+i*9)+'%;animation-delay:'+(i*190)+'ms');
-  put(mid,'diaryT','--c:'+c.acd+';bottom:34px;left:0;right:0;text-align:center;animation-delay:780ms','记下了 · '+W+' 词');
+  put(mid,'diaryT','--c:'+c.acd+';bottom:'+bottomAboveTab()+';left:0;right:0;text-align:center;animation-delay:780ms','记下了 · '+W+' 词');
   setTimeout(function(){clear(fx);},2200);return 2200;
 };
 
@@ -1528,7 +1567,7 @@ MV.skyline=function(fx,t){
   var mid=box(fx);
   put(mid,'sunC','--c:'+c.ac);
   put(fx,'skyL','--c:'+c.ink);
-  put(mid,'skyT','--c:'+c.acd+';bottom:34px;left:0;right:0;text-align:center;animation-delay:920ms','今天，'+W+' 个词。');
+  put(mid,'skyT','--c:'+c.acd+';bottom:'+bottomAboveTab()+';left:0;right:0;text-align:center;animation-delay:920ms','今天，'+W+' 个词。');
   setTimeout(function(){clear(fx);},2400);return 2400;
 };
 
@@ -1543,7 +1582,7 @@ MV.watercolor=function(fx,t){
       +';width:'+s+'px;height:'+s+'px;margin:'+(R()*50-40).toFixed(0)+'px 0 0 '
       +(R()*70-60).toFixed(0)+'px;animation-delay:'+(i*115)+'ms');
   }
-  put(mid,'washT','--c:'+c.acd+';bottom:34px;left:0;right:0;text-align:center;animation-delay:780ms','今天的水彩，'+W+' 笔');
+  put(mid,'washT','--c:'+c.acd+';bottom:'+bottomAboveTab()+';left:0;right:0;text-align:center;animation-delay:780ms','今天的水彩，'+W+' 笔');
   setTimeout(function(){clear(fx);},2500);return 2500;
 };
 
@@ -1554,7 +1593,7 @@ MV.ink=function(fx,t){
   put(fx,'mountI','--c:#0B0906');
   put(fx,'inkW','--c:'+c.ac+'8C');
   put(fx,'lampL','--c:'+c.acd+';left:calc(50% - 5px)');
-  put(fx,'inkT','--c:'+c.acd+';bottom:34px;left:0;right:0;text-align:center','一盏灯，'+W+' 个词');
+  put(fx,'inkT','--c:'+c.acd+';bottom:'+bottomAboveTab()+';left:0;right:0;text-align:center','一盏灯，'+W+' 个词');
   setTimeout(function(){clear(fx);},2700);return 2700;
 };
 
@@ -1572,7 +1611,7 @@ MV.wind=function(fx,t){
       +';width:'+(7+R()*9).toFixed(0)+'px;height:'+(5+R()*6).toFixed(0)+'px;'
       +'animation-delay:'+(R()*380)+'ms');
   }
-  put(mid,'windT','--c:'+c.acd+';bottom:34px;left:0;right:0;text-align:center;animation-delay:660ms','风把你的努力记下了');
+  put(mid,'windT','--c:'+c.acd+';bottom:'+bottomAboveTab()+';left:0;right:0;text-align:center;animation-delay:660ms','风把你的努力记下了');
   setTimeout(function(){clear(fx);},2300);return 2300;
 };
 
@@ -1598,7 +1637,7 @@ MV.cat=function(fx,t){
       +(360+R()*300)+'ms','♥');
   }
   var mid=box(fx);
-  put(mid,'catT','--c:'+c.acd+';bottom:34px;left:0;right:0;text-align:center;animation-delay:920ms','喵 · 今天也完成了');
+  put(mid,'catT','--c:'+c.acd+';bottom:'+bottomAboveTab()+';left:0;right:0;text-align:center;animation-delay:920ms','喵 · 今天也完成了');
   setTimeout(function(){clear(fx);},2500);return 2500;
 };
 
@@ -1626,7 +1665,7 @@ MV.cloud=function(fx,t){
   put(pad,'sealS','background:#C0392B;left:212px;top:88px;animation-delay:720ms','今日');
 
   var mid=box(fx);
-  put(mid,'cloudT','--c:'+c.acd+';bottom:34px;left:0;right:0;text-align:center;animation-delay:980ms','云开，今日已成');
+  put(mid,'cloudT','--c:'+c.acd+';bottom:'+bottomAboveTab()+';left:0;right:0;text-align:center;animation-delay:980ms','云开，今日已成');
   setTimeout(function(){clear(fx);},2600);return 2600;
 };
 
@@ -1642,7 +1681,7 @@ MV.page=function(fx,t){
     put(mid,'dustP','background:'+c.ac+';left:calc(50% + '
       +(R()*240-120).toFixed(0)+'px);top:calc(50% + '+(R()*150-75).toFixed(0)+'px);'
       +'--dy:-'+(20+R()*44).toFixed(0)+'px;animation-delay:'+(780+R()*520)+'ms');
-  put(mid,'pageT','--c:'+c.acd+';bottom:34px;left:0;right:0;text-align:center;animation-delay:980ms','这一页，翻过去了');
+  put(mid,'pageT','--c:'+c.acd+';bottom:'+bottomAboveTab()+';left:0;right:0;text-align:center;animation-delay:980ms','这一页，翻过去了');
   setTimeout(function(){clear(fx);},2800);return 2800;
 };
 
@@ -1676,27 +1715,45 @@ MV.petal=function(fx,t){
   var lip=put(fx,'lipP',lipCss);
   for(var k=0;k<4;k++) put(lip,'','','','i');
 
-  /* More Love 的位置也按真实控件算，别写死 bottom。
-     优先放「打卡按钮」和底部切换栏之间的留白（设计稿原本就是按钮旁的手写体）；
-     那块太窄时退回「统计栏和按钮之间」，再不行才贴按钮上沿。
-     居中仍用 left:50%：.loveT 挂的是 kPopC，关键帧自带 translateX(-50%)，
+  /* More Love：优先放「打卡按钮」与底部切换栏之间的留白；
+     那块太窄就退回「统计栏与按钮之间」；都拿不到才贴 tabbar 上沿。
+     居中用 left:50%——.loveT 挂 kPopC，关键帧自带 translateX(-50%)，
      换成 left:0;width:100% 会被这层 -50% 再推半个身位，文字直接出屏。 */
   var mid=box(fx);
-  var btn=anchorOf('#checkinBtn'), tb=anchorOf('.tabbar'), pst=anchorOf('.pstat');
-  var lvPos='bottom:34px;';
+  /* More Love 的落位。设计稿把它放在 bottom:62px（548 画布，≈y486），
+     位置在打卡按钮上方一点。前端 .view 是可滚动的，高度随窗口变，
+     所以必须按真实控件反算，规则按「从最贴设计稿到最保守」排序：
+       ① 按钮下沿 ~ tabbar 上沿的净空         （最接近设计稿：按钮旁）
+       ② 统计栏下沿 ~ 按钮上沿的缝            （次选，也是留白）
+       ③ 都放不下就放弃这条文案               （宁可不出，绝不压数字）
+     ⚠ 这里踩过的坑：短窗口（410×540）下按钮底边本身就顶到 tabbar
+     （.app 的 64px 下内边距 == tabbar 高），① 的净空是负的；
+     曾经退到「统计栏内部居中」，结果正好压住「近七天均值」那个 0。
+     统计栏三列都排满数字，里面没有任何安全位置，所以 ② 只能取
+     「统计栏之下、按钮之上」这条缝，绝不能进统计栏里面。
+     ⚠ 另一个坑：.pstat / #checkinBtn 在回顾页、设置页也有同名节点，
+     选择器必须限定 #view-today，否则量到隐藏元素（rect 全 0）。 */
+  var btn=anchorOf('#view-today #checkinBtn') || anchorOf('#checkinBtn');
+  var tb=anchorOf('.tabbar');
+  var pst=anchorOf('#view-today .pstat') || anchorOf('.pstat');
+  var H=stageH(), LIMIT=19, topPx=null;
   if(btn){
     var below=btn.t+btn.h;
     var roomBelow = tb ? (tb.t-below) : 60;
-    if(roomBelow>=26){
-      lvPos='top:'+(below+Math.max(4,(roomBelow-19)/2)).toFixed(1)+'px;';
-    }else if(pst){
+    if(roomBelow>=LIMIT+6){
+      topPx=below+Math.max(3,(roomBelow-LIMIT)/2);
+    }else if(pst && pst.h>0){
       var gTop=pst.t+pst.h, gH=btn.t-gTop;
-      lvPos='top:'+(gTop+Math.max(0,(gH-19)/2)).toFixed(1)+'px;';
-    }else{
-      lvPos='top:'+(btn.t-27).toFixed(1)+'px;';
+      if(gH>=LIMIT+2) topPx=gTop+(gH-LIMIT)/2;   /* 统计栏之下、按钮之上 */
     }
+    if(topPx!=null && tb && tb.h>0) topPx=Math.min(topPx, tb.t-4-LIMIT);
+    if(topPx!=null) topPx=Math.max(0,Math.min(topPx, H-LIMIT));
   }
-  put(mid,'loveT','--c:'+c.acd+';'+lvPos+'left:50%;animation-delay:980ms','More Love');
+  if(topPx!=null){
+    put(mid,'loveT','--c:'+c.acd+';top:'+topPx.toFixed(1)+'px;left:50%;animation-delay:980ms','More Love');
+  }
+  /* 放不下就不放：s21 顶部右侧本来就有静态「More Love」装饰，
+     动画版只是锦上添花，压在数字上比不出现更糟。 */
   setTimeout(function(){clear(fx);},2600);return 2600;
 };
 
@@ -1731,20 +1788,33 @@ function fit(){
   if(!ensure()) return;
   var w=layer.clientWidth, h=layer.clientHeight;
   if(!w||!h) return;
-  /* 舞台宽度跟 .app 的 max-width:430 对齐。
-     原来直接用窗口宽度，桌面 1366 宽时 scale 变成 4.38，
-     一个 52px 的唇印被放大到 177px，会盖住真实文字（实测压住「已掌握」）。
-     高度不参与缩放，保持「按屏宽等比」；只给宽度夹一个上限。 */
+  /* 舞台尺寸 = .app 的真实可视区，宽高分开算。
+     【曾经的 bug】只按宽度缩放（s=w/312，高度固定 548*s 再居中）：
+       · 窗口比 548*s 矮 → top 夹成 0，画布下半截溢出屏幕，
+         于是写死 bottom:34px 的 14 套底部文案整条跑出视口
+         （s21 的 More Love、s13/s16/s19 等全部中招）；
+       · 窗口比它高 → 上下各留 79px 硬边，全屏特效像贴了一块卡片。
+     正确做法：宽用 min(屏宽,430) 换算 s；高按 h 反算需要多少设计稿像素，
+     把画布高度撑到刚好铺满，纵向不缩放、不平移。这样 y=0 永远贴屏幕顶，
+     设计稿里的 top/bottom 坐标语义不变。 */
   var vw=Math.min(w,430);
-  var s=vw/312, sh=548*s;
+  var s=vw/312;
+  /* 画布高度 = 视口高 ÷ 缩放比：让「舞台底边」与「屏幕底边」永远重合，
+     底部锚定（bottom:xx）的语义才稳定。之前用 max(548, h/s) 保底，
+     短窗口（如 410×540）会把画布拉到 720 高、超出屏幕 180px，
+     所有贴底的层就掉到视口外——这正是底部文案消失的直接原因。 */
+  var dh=h/s;
+  var sh=dh*s;
   stage.style.width='312px';
-  stage.style.height='548px';
+  stage.style.height=dh.toFixed(1)+'px';
   stage.style.transform='scale('+s.toFixed(4)+')';
   stage.style.left=Math.max(0,(w-312*s)/2).toFixed(1)+'px';
-  stage.style.top=Math.max(0,(h-sh)/2).toFixed(1)+'px';
-  /* 全屏层要向外延伸多少：舞台居中后，上下各留的空白换算成「设计稿像素」 */
-  var bleed=Math.max(0,(h-sh)/2)/s;
+  /* 视觉顶端对齐 .app 顶部。sh 已等于 h，不再居中留白 */
+  stage.style.top='0px';
+  var bleed=0;
   layer.style.setProperty('--bleed', bleed.toFixed(1)+'px');
+  /* 让依赖舞台高度的层知道「底部」在哪：设计稿 548 → 实际 dh */
+  layer.style.setProperty('--dh', dh.toFixed(1));
 }
 
 function play(id, data){

@@ -214,6 +214,44 @@
 
   function themeById(id) { return THEME_MAP[id] || null; }
 
+  /* 从 base 里挑出「某一套主题专属」的规则。
+   *
+   * 【为什么需要这个】
+   * themes.js 的 base 字段是设计稿整份 CSS 的快照，里面混了两类东西：
+   *   ① 设计稿外壳（.phone / .scr / .wrap …）—— 前端不用，index.html 有自己的骨架
+   *   ② 21 套主题各自的视觉定制（约 79 条）—— 一周柱状图的「图形语言」全在这里：
+   *      s05 气泡直径=数值、s14 散点图、s20 横向条、s21 条形码、s02 歪扭手绘块…
+   * 而 themeBlock() 原来只拼 css + l1..l5，**从没注入过 base**。
+   * 结果就是 21 套主题的柱状图全退化成同一种「4px 圆角普通柱」——
+   * 这也是用户觉得「那块柱状图没什么用」的真正原因（不只是没交互）。
+   *
+   * 只取 `[data-s="当前主题"]` 开头的规则，一次性正则，按 { } 配对切分。
+   * 主题切换时 themeStyleEl 整体重写，所以不会累积。 */
+  function themeBase(id) {
+    var raw = TH.base || '';
+    if (!raw || !id) return '';
+    var out = [];
+    var re = /\[data-s\s*=\s*["']?([a-z0-9]+)["']?\]/g;
+    var m;
+    while ((m = re.exec(raw))) {
+      if (m[1] !== id) continue;
+      /* 从选择器起点找到规则体结束（跳过字符串里的花括号） */
+      var start = m.index;
+      var open = raw.indexOf('{', start);
+      if (open < 0) continue;
+      var depth = 0, i = open, end = -1;
+      for (; i < raw.length; i++) {
+        var ch = raw.charAt(i);
+        if (ch === '{') depth++;
+        else if (ch === '}') { depth--; if (depth === 0) { end = i; break; } }
+      }
+      if (end < 0) continue;
+      out.push(raw.slice(start, end + 1));
+      re.lastIndex = end;
+    }
+    return out.join('\n');
+  }
+
   /* 生成某个主题的 CSS 变量块 + 该主题的所有样式 */
   function themeBlock(t) {
     var c = t.c;
@@ -226,6 +264,7 @@
       + ';--bbd:' + t.bbd + ';--bsh:' + t.bsh + ';--pill:' + t.pill
       + ';--ckr:' + t.ckr + ';--std:' + t.std + ';--nfs:' + t.nfs + ';--bls:' + t.bls
       + '}'
+      + themeBase(t.id)          /* ← 主题专属的图形语言（柱状图等）必须在这 */
       + (t.css || '')
       + (t.l1 || '') + (t.l2 || '') + (t.l3 || '') + (t.l4 || '') + (t.l5 || '');
   }
@@ -269,6 +308,11 @@
     renderThemePickers();
     renderThemeNow();
     syncHeroAlign();
+    /* 主题会改柱状图的方向和形状（s20 是横向、s14 是散点、s05 改直径），
+       标签行要不要显示、目标线放在哪，都得按新主题重新量一次。
+       少了这一步，换主题后柱图会停在旧主题的排版上（s20 尤其明显：
+       柱子已经转横向，星期标签还挂在下面）。 */
+    renderWeek();
   }
 
   /* 主题可能把 hero 改成右对齐 / 居中，徽章与快捷加词会挤在同一行的右侧。
@@ -361,7 +405,8 @@
   }
   function ruleText(rule) {
     if (!rule || rule.type === 'daily') return '每天';
-    if (rule.type === 'weekly') return '每周' + WD[Number(rule.weekday)];
+    /* 注意别写成「每周周三」——「周」字在 WD 里已经有了 */
+    if (rule.type === 'weekly') return '每' + WD[Number(rule.weekday)];
     if (rule.type === 'monthly') return '每月 ' + rule.day + ' 号';
     return '每天';
   }
@@ -382,14 +427,25 @@
     for (var k in S.days) if (isActive(k)) n++;
     return n;
   }
+  /* 近七天日均：只对「有记录的天数」求平均。
+   * 旧写法固定除以 7 —— 一周里只有 2 天有数据时，日均会被摊薄成
+   * 真实值的 2/7，跟上面的柱状图完全对不上，看着就像个假数字。
+   * 一天都没记时返回 0（不是 NaN）。 */
   function avg7() {
-    var s = 0;
-    for (var i = 0; i < 7; i++) { var d = peek(ds(shift(-i))); s += d ? d.words : 0; }
-    return s / 7;
+    var s = 0, n = 0;
+    for (var i = 0; i < 7; i++) {
+      var d = peek(ds(shift(-i)));
+      var w = d ? (d.words || 0) : 0;
+      if (w > 0) { s += w; n++; }
+    }
+    return n ? s / n : 0;
   }
 
   function goalWords() { return Math.max(1, Math.round(num(S.config.goalWords, DEF_GOAL))); }
   function learned() { return Math.max(0, Math.round(num(S.config.learnedWords, 0))); }
+  /* 每日目标：柱状图上那条虚线就是它。取 dailyTarget 而不是 goalWords ——
+     后者是「总词汇量目标」（3,597），跟每天背多少不是一个量级。 */
+  function dailyGoal() { return Math.max(1, Math.round(num(S.config.dailyTarget, 50))); }
 
   function learnSnapshot(t, v) {
     var hist = S.config.learnedHist || [];
@@ -623,33 +679,193 @@
   function fmtNum(n) { return Number(n).toLocaleString('en-US'); }
 
   /* ================= 渲染：今日 ================= */
-  var WEEK_H = [42, 68, 55, 90, 36, 74, 100];
+
+  /* 「一周」图：最近 7 天真实词数。
+   *
+   * 结构约束（必须守住，否则 21 套主题会集体崩）：
+   *   `.pweek > i > b` 这三层一个字都不能动。
+   *   21 套主题各有一套 pweek 图形语言 —— s05 是「直径=数值」的气泡、
+   *   s14 是散点（b 用 position:absolute + var(--h)）、s20 整个转成横向条、
+   *   s02/s10 用 i:nth-child(2n|3n) 做随机感、其余用 var(--hp) 当高度百分比。
+   *   往 i 里塞任何新节点都会变成 flex item，把柱子挤歪；包一层更会直接毁掉
+   *   所有 `[data-s=xx] .pweek i b` 选择器。
+   *   → 所以「星期 / 词数」放到 .pweek 外面的 .pwd-row 里，靠 gap 同步对齐。
+   *
+   * 交互：点柱子或点下面的标签 → 打开那天的编辑浮层（复用 openSheet）。
+   * 数据口径：柱高按「本周最高值 与 每日目标 的较大者」归一化，
+   *   这样目标虚线永远在画布内，柱子的相对高低也不会被目标线压扁。 */
+  function weekData() {
+    var arr = [];
+    for (var i = 6; i >= 0; i--) {
+      var dt = shift(-i);
+      var key = ds(dt);
+      var rec = peek(key);
+      arr.push({
+        key: key,
+        wd: WD_S[dt.getDay()],        /* 一 二 三 … 日 */
+        date: (dt.getMonth() + 1) + '/' + dt.getDate(),
+        words: rec ? (rec.words || 0) : 0,
+        isToday: i === 0
+      });
+    }
+    return arr;
+  }
 
   function renderWeek() {
     var box = $('pweek');
+    var wrap = $('pweekWrap');
     if (!box) return;
-    /* 最近 7 天的真实词数，归一化到 10%–100% */
-    var vals = [], max = 1;
-    for (var i = 6; i >= 0; i--) {
-      var rec = peek(ds(shift(-i)));
-      var w = rec ? (rec.words || 0) : 0;
-      vals.push(w);
-      if (w > max) max = w;
-    }
-    var any = vals.some(function (v) { return v > 0; });
+
+    var days = weekData();
+    var goal = dailyGoal();
+    var max = 0, any = false;
+    days.forEach(function (d) {
+      if (d.words > max) max = d.words;
+      if (d.words > 0) any = true;
+    });
+    var scale = Math.max(1, max, goal);   /* 统一量纲：目标线不飘出画外 */
+
+    /* 柱：只给 i 设变量和 data，不加子节点 */
     var html = '';
-    vals.forEach(function (v, i) {
-      var h = v > 0 ? Math.max(12, Math.round(v / max * 100)) : 0;
-      html += '<i' + (i === 6 ? ' class="on"' : '') + '>'
-        + '<b style="--hp:' + (h || 100) + '%"></b></i>';
+    days.forEach(function (d, i) {
+      var pct = d.words > 0 ? Math.round(d.words / scale * 100) : 0;
+      var cls = [];
+      if (i === 6) cls.push('on');                 /* 今天（主题靠 .on 上色） */
+      if (d.words > 0 && d.words >= goal) cls.push('hit');
+      html += '<i' + (cls.length ? ' class="' + cls.join(' ') + '"' : '')
+        + ' data-k="' + d.key + '"'
+        + ' role="button" tabindex="0"'
+        + ' aria-label="' + d.date + ' 周' + d.wd + ' ' + d.words + ' 词"'
+        + ' title="' + d.date + ' 周' + d.wd + ' · ' + d.words + ' 词"'
+        + ' style="--h:' + pct + ';--hp:' + pct + '%"><b></b></i>';
     });
     box.innerHTML = html;
     box.setAttribute('data-empty', any ? '' : '1');
+
+    var cs0 = getComputedStyle(box);
+    var vertical = cs0.flexDirection === 'column';
+
+    /* ── 标签行：星期 + 当天词数 ──
+       先处理它，因为扣减高度会改变 .pweek 的盒子，目标线要基于新盒子算。
+       顺序：写标签 → 量标签高 → 扣柱子高 → 再量柱子盒子 → 画目标线。 */
+    var row = $('pwdRow');
+    if (row) {
+      var lab = '';
+      days.forEach(function (d) {
+        var cls = [];
+        if (d.isToday) cls.push('on');
+        if (d.words === 0) cls.push('zero');
+        lab += '<span' + (cls.length ? ' class="' + cls.join(' ') + '"' : '')
+          + ' data-k="' + d.key + '">'
+          + '<i>' + d.wd + '</i>'
+          + '<b>' + (d.words > 0 ? d.words : '–') + '</b>'
+          + '</span>';
+      });
+      row.innerHTML = lab;
+      /* 与柱子共用同一套间距，标签才能正对柱心 */
+      row.style.gap = cs0.columnGap || cs0.gap || '0px';
+      /* s20 把图转成了横向（flex-direction:column），此时逐列标签没有意义 */
+      row.style.display = vertical ? 'none' : '';
+
+      /* 【高度预算】标签行不能白占高度 —— 390×844 下今日页本来就贴着
+         底边，再加一行会把打卡按钮推进 tabbar 底下。
+
+         算法：先量「柱图 + 标签」这块的总高度上限 = 原来的柱图高度 + 标签高度
+         再不够用时，才让柱子让位。但实测中发现一个坑：量「无标签高度」时
+         会读到媒体查询生效前的值（74px 是 max-height:700 之外的值），
+         算出来的 --wh 反而等于原高度，等于没扣。
+
+         所以改用不依赖中间态的做法：直接量标签行吃掉多少（rowH + margin-top），
+         再从「当前 computed height」里扣。computed height 是浏览器已经算好的
+         最终值，不受时序影响。 */
+      if (wrap) wrap.setAttribute('data-vertical', vertical ? '1' : '');
+      if (wrap && !vertical) {
+        wrap.setAttribute('data-lab', '1');
+        box.style.removeProperty('--wh');
+        void box.offsetHeight;
+        /* 读到的是「柱子按原高度、标签行已占位」之后的真实状态：
+           curH = 柱子原高，over = 页面多出多少（正数才需要扣） */
+        var curH = parseFloat(getComputedStyle(box).height) || 50;
+        var view = document.getElementById('view-today');
+        var over = view ? Math.max(0, view.scrollHeight - view.clientHeight) : 0;
+        var rowH = row.getBoundingClientRect().height;
+        var mt = parseFloat(getComputedStyle(row).marginTop) || 0;
+        var need = rowH + mt;                       /* 标签行总共吃掉多少 */
+
+        /* 只扣「刚好能消掉溢出」的量：多扣一分柱子就白矮一分。
+           扣完仍溢出（矮屏）就交给 .view 滚动 —— 那是既定的设计，
+           硬塞会把柱子压成一根线，反而更难读。 */
+        var give = Math.min(need, over);
+        if (give > 0.5) {
+          box.style.setProperty('--wh', Math.max(30, curH - give).toFixed(1) + 'px');
+        }
+        void box.offsetHeight;
+      } else {
+        if (wrap) wrap.removeAttribute('data-lab');
+        box.style.removeProperty('--wh');
+        row.style.display = 'none';
+      }
+    }
+
+    /* 目标虚线：位置 = 目标 / 量纲。
+     * 不写 CSS 百分比，而是实测 .pweek 的盒子后算 top ——
+     * 21 套主题的 height / padding / align-items 各不相同（s14 还给了
+     * padding-top:7.5px、s20 直接把方向转成 column），纯 CSS 算不准。
+     * s20 是横向图，横线没有意义，data-vertical 时由 CSS 隐藏。
+     * 必须在「扣完高度」之后再量，否则线会落在柱子上方。 */
+    var goalPct = Math.round(goal / scale * 100);
+    var goalEl = $('pweekGoal');
+    if (goalEl) {
+      if (!vertical && any && goalPct > 0 && goalPct < 100) {
+        var wkR = box.getBoundingClientRect();
+        var wrapR = wrap ? wrap.getBoundingClientRect() : wkR;
+        var bt = parseFloat(getComputedStyle(box).paddingTop) || 0;
+        var usable = wkR.height - bt;      /* 去掉内边距后柱子的可用高度 */
+        goalEl.style.top = (wkR.top - wrapR.top + bt + usable * (1 - goalPct / 100)).toFixed(1) + 'px';
+        goalEl.classList.add('on');
+      } else {
+        goalEl.classList.remove('on');
+      }
+    }
+
     /* 空状态：柱子退成一条基线 + 一行说明，比留一片黑更有信息 */
     var tip = $('weekTip');
     if (tip) tip.style.display = any ? 'none' : 'block';
+
+    /* 点柱子 / 点标签 → 改那一天的记录。事件委托，重渲染后不用重绑 */
+    if (wrap && !wrap.dataset.bound) {
+      wrap.dataset.bound = '1';
+      function pick(el) {
+        var hit = el && el.closest ? el.closest('[data-k]') : null;
+        if (!hit) return;
+        var k = hit.getAttribute('data-k');
+        if (k) openSheet(k);
+      }
+      wrap.addEventListener('click', function (e) { pick(e.target); });
+      wrap.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        var it = e.target.closest('[data-k]');
+        if (!it) return;
+        e.preventDefault();
+        pick(it);
+      });
+    }
   }
 
+  /* ================= 待办 =================
+   *
+   * 交互设计（v3.5 重做）：
+   *   单击行身        → 勾选 / 取消勾选（保留原来的主操作）
+   *   点右侧 ⋯        → 弹出操作菜单：重命名 / 改重复规则 / 删除
+   *   长按行身 600ms  → 直接进菜单（快捷入口，不是唯一入口）
+   *
+   * 为什么必须改成「有可见按钮」：
+   *   旧版只靠长按删除，但全页没有 user-select:none / -webkit-touch-callout:none，
+   *   手指按住 0.6 秒时 iOS/安卓会先弹「拷贝/全选」气泡并中断事件，
+   *   删除几乎不可能触发；删除还用了 confirm()，在 file:// 或某些 WebView
+   *   里会被静默吞掉（返回 false），表现就是「点了没反应」。
+   *   现在菜单是页内浮层、确认是页内二次确认，不依赖任何原生弹窗。
+   */
   function renderTodos() {
     var list = $('todoList');
     if (!list) return;
@@ -668,34 +884,58 @@
       var done = doneIds.indexOf(t.id) >= 0;
       var row = document.createElement('div');
       row.className = 'pit' + (done ? ' on' : '');
+      row.setAttribute('data-id', t.id);
       row.innerHTML = '<span class="pck"></span>'
         + '<span class="ptt"></span>'
-        + '<span class="ptg"></span>';
+        + '<span class="ptg"></span>'
+        + '<button class="pmo" type="button" aria-label="更多操作">'
+        + '<i></i><i></i><i></i></button>';
       row.querySelector('.ptt').textContent = t.title;
       row.querySelector('.ptg').textContent = ruleText(t.rule);
 
-      /* 长按删除，单击勾选 */
+      /* ── 手势：单击勾选，长按进菜单 ──
+       * 用 pointerdown/up/move 三件套，并加「位移超过 10px 就取消」，
+       * 手指稍微一滑不会再误触；长按不再触发浏览器选字（CSS 也补了
+       * user-select:none）。长按后吞掉随后的 click，避免又勾一次。 */
       var pressTimer = null, longPressed = false;
-      function startPress() {
-        longPressed = false;
-        pressTimer = setTimeout(function () {
-          longPressed = true;
-          if (!confirm('删除待办「' + t.title + '」？历史打卡记录会保留。')) return;
-          var target = null;
-          S.todos.forEach(function (x) { if (x.id === t.id) target = x; });
-          if (target) { target.del = true; target.u = now(); }
-          touch();
-          renderToday();
-          scheduleSync();
-          toast('已删除');
-        }, 620);
-      }
-      function endPress() { clearTimeout(pressTimer); }
-      row.addEventListener('pointerdown', startPress);
-      row.addEventListener('pointerup', endPress);
-      row.addEventListener('pointercancel', endPress);
+      var sx = 0, sy = 0;
 
-      row.addEventListener('click', function () {
+      function cancelPress() {
+        if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+      }
+      function onDown(e) {
+        if (e.target.closest('.pmo')) return;   /* 点 ⋯ 不参与长按 */
+        longPressed = false;
+        sx = e.clientX; sy = e.clientY;
+        cancelPress();
+        pressTimer = setTimeout(function () {
+          pressTimer = null;
+          longPressed = true;
+          openTodoMenu(t.id);
+        }, 600);
+      }
+      function onMove(e) {
+        if (!pressTimer) return;
+        if (Math.abs(e.clientX - sx) > 10 || Math.abs(e.clientY - sy) > 10) cancelPress();
+      }
+      function onUp() { cancelPress(); }
+
+      row.addEventListener('pointerdown', onDown);
+      row.addEventListener('pointermove', onMove);
+      row.addEventListener('pointerup', onUp);
+      row.addEventListener('pointercancel', function () { cancelPress(); longPressed = false; });
+      /* 指针移出元素也要停表，否则按住后滑出去再松手仍会弹菜单 */
+      row.addEventListener('pointerleave', function () { cancelPress(); });
+
+      /* ⋯ 按钮：直接进菜单，不参与勾选 */
+      row.querySelector('.pmo').addEventListener('click', function (e) {
+        e.stopPropagation();
+        openTodoMenu(t.id);
+      });
+
+      /* 行身单击 → 勾选。长按刚触发过就吞掉这一次 */
+      row.addEventListener('click', function (e) {
+        if (e.target.closest('.pmo')) return;
         if (longPressed) { longPressed = false; return; }
         var dd = dayOf(ds(today()), true);
         var i = dd.done.indexOf(t.id);
@@ -708,6 +948,193 @@
 
       list.appendChild(row);
     });
+  }
+
+  /* ───────── 待办操作菜单 ─────────
+   * 页内浮层，不用 confirm / prompt（在 file:// 和部分 WebView 会被吞）。
+   * 三种操作：重命名、改重复规则、删除；删除有二次确认。
+   * 菜单是单例：#todoMenu 常驻 DOM，每次打开重填内容。 */
+  var menuTodoId = null;
+  var menuMode = 'list';        /* 'list' | 'rename' | 'rule' | 'del' */
+
+  function todoById(id) {
+    var hit = null;
+    S.todos.forEach(function (x) { if (x.id === id) hit = x; });
+    return hit;
+  }
+
+  function closeTodoMenu() {
+    menuTodoId = null;
+    menuMode = 'list';
+    var m = $('todoMask'), p = $('todoMenu');
+    if (m) m.classList.remove('show');
+    if (p) p.classList.remove('show');
+  }
+
+  function openTodoMenu(id) {
+    var t = todoById(id);
+    if (!t || t.del) return;
+    menuTodoId = id;
+    menuMode = 'list';
+    paintTodoMenu();
+    var m = $('todoMask'), p = $('todoMenu');
+    if (m) m.classList.add('show');
+    if (p) p.classList.add('show');
+  }
+
+  function paintTodoMenu() {
+    var p = $('todoMenu');
+    if (!p) return;
+    var t = todoById(menuTodoId);
+    if (!t) { closeTodoMenu(); return; }
+    var title = $('tmTitle');
+    if (title) title.textContent = t.title;
+    var sub = $('tmSub');
+    if (sub) sub.textContent = '重复：' + ruleText(t.rule);
+
+    var body = $('tmBody');
+    if (!body) return;
+
+    if (menuMode === 'list') {
+      body.innerHTML = ''
+        + '<button class="tmi" data-act="rename">重命名<span>改掉这行文字</span></button>'
+        + '<button class="tmi" data-act="rule">改重复规则<span>当前 ' + ruleText(t.rule) + '</span></button>'
+        + '<button class="tmi dgr" data-act="del">删除这条<span>历史打卡记录会保留</span></button>';
+    } else if (menuMode === 'rename') {
+      body.innerHTML = ''
+        + '<label class="tml" for="tmInput">这一条叫什么</label>'
+        + '<input class="tin" id="tmInput" type="text" maxlength="40" autocomplete="off">'
+        + '<div class="tmact">'
+        + '<button class="pbt" data-act="back">返回</button>'
+        + '<button class="pbt pri" data-act="renameSave">保存</button>'
+        + '</div>';
+      var inp = $('tmInput');
+      if (inp) {
+        inp.value = t.title;
+        /* 延迟聚焦：iOS 上立刻 focus 常被忽略，要等浮层过渡开始后再聚焦 */
+        setTimeout(function () { try { inp.focus(); inp.select(); } catch (e) { } }, 60);
+        inp.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') { e.preventDefault(); saveRename(); }
+        });
+      }
+    } else if (menuMode === 'rule') {
+      var r = t.rule || { type: 'daily' };
+      var seg = [['daily', '每天'], ['weekly', '每周'], ['monthly', '每月']];
+      var segHtml = seg.map(function (s) {
+        return '<span data-r="' + s[0] + '"' + (r.type === s[0] ? ' class="on"' : '') + '>' + s[1] + '</span>';
+      }).join('');
+      var wdHtml = WD_S.map(function (w, i) {
+        return '<span data-wd="' + i + '"' + (r.type === 'weekly' && Number(r.weekday) === i ? ' class="on"' : '') + '>' + w + '</span>';
+      }).join('');
+      var dayNum = r.type === 'monthly' ? Number(r.day) || 1 : 1;
+      body.innerHTML = ''
+        + '<label class="tml">多久一次</label>'
+        + '<div class="tmseg" id="tmSeg">' + segHtml + '</div>'
+        + '<div class="tmsub' + (r.type === 'weekly' ? ' on' : '') + '" id="tmWd">' + wdHtml + '</div>'
+        + '<div class="tmsub tmday' + (r.type === 'monthly' ? ' on' : '') + '" id="tmDay">'
+        + '<em data-d="-1">−</em><u><b id="tmDayNum">' + dayNum + '</b><i>号</i></u><em data-d="1">+</em>'
+        + '</div>'
+        + '<div class="tmact">'
+        + '<button class="pbt" data-act="back">返回</button>'
+        + '<button class="pbt pri" data-act="ruleSave">保存</button>'
+        + '</div>';
+      bindRulePicker();
+    } else if (menuMode === 'del') {
+      body.innerHTML = ''
+        + '<p class="tmwarn">删除「' + t.title + '」？<br>'
+        + '<span>已经打过的卡、记过的词都会保留，只是这行待办不再出现。</span></p>'
+        + '<div class="tmact">'
+        + '<button class="pbt" data-act="back">取消</button>'
+        + '<button class="pbt dgr" data-act="delSure">确认删除</button>'
+        + '</div>';
+    }
+  }
+
+  /* 改规则时用到的临时选择（打开时从待办读，保存时写回） */
+  var tmRule = { type: 'daily', weekday: 1, day: 1 };
+
+  function bindRulePicker() {
+    var t = todoById(menuTodoId);
+    if (!t) return;
+    var r = t.rule || { type: 'daily' };
+    tmRule = {
+      type: r.type || 'daily',
+      weekday: (r.weekday == null ? 1 : Number(r.weekday)),
+      day: Number(r.day) || 1
+    };
+    var seg = $('tmSeg');
+    if (seg) seg.addEventListener('click', function (e) {
+      var s = e.target.closest('[data-r]');
+      if (!s) return;
+      tmRule.type = s.getAttribute('data-r');
+      seg.querySelectorAll('span').forEach(function (x) {
+        x.classList.toggle('on', x === s);
+      });
+      var wd = $('tmWd'), dy = $('tmDay');
+      if (wd) wd.classList.toggle('on', tmRule.type === 'weekly');
+      if (dy) dy.classList.toggle('on', tmRule.type === 'monthly');
+    });
+    var wdBox = $('tmWd');
+    if (wdBox) wdBox.addEventListener('click', function (e) {
+      var s = e.target.closest('[data-wd]');
+      if (!s) return;
+      tmRule.weekday = Number(s.getAttribute('data-wd'));
+      wdBox.querySelectorAll('span').forEach(function (x) {
+        x.classList.toggle('on', x === s);
+      });
+    });
+    var dy = $('tmDay');
+    if (dy) dy.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-d]');
+      if (!b) return;
+      var n = Number(b.getAttribute('data-d'));
+      tmRule.day = Math.min(31, Math.max(1, tmRule.day + n));
+      var num = $('tmDayNum');
+      if (num) num.textContent = tmRule.day;
+    });
+  }
+
+  function saveRename() {
+    var t = todoById(menuTodoId);
+    var inp = $('tmInput');
+    if (!t || !inp) return;
+    var v = inp.value.trim();
+    if (!v) { inp.focus(); return; }
+    if (v === t.title) { closeTodoMenu(); return; }
+    t.title = v;
+    t.u = now();
+    touch();
+    renderToday();
+    closeTodoMenu();
+    toast('已重命名');
+    scheduleSync();
+  }
+
+  function saveRule() {
+    var t = todoById(menuTodoId);
+    if (!t) return;
+    var r = { type: tmRule.type };
+    if (r.type === 'weekly') r.weekday = tmRule.weekday;
+    if (r.type === 'monthly') r.day = tmRule.day;
+    t.rule = r;
+    t.u = now();
+    touch();
+    renderToday();
+    closeTodoMenu();
+    toast('已改为 ' + ruleText(r));
+    scheduleSync();
+  }
+
+  function deleteTodo() {
+    var t = todoById(menuTodoId);
+    if (!t) return;
+    t.del = true;
+    t.u = now();
+    touch();
+    renderToday();
+    closeTodoMenu();
+    toast('已删除');
+    scheduleSync();
   }
 
   function renderToday() {
@@ -1114,6 +1541,23 @@
     var cbt = $('customBtn');
     if (cbt) cbt.addEventListener('click', function () { openSheet(ds(today())); });
 
+    /* 待办操作菜单：一个委托管所有按钮，菜单内容重绘后不用重绑 */
+    var tmask = $('todoMask');
+    if (tmask) tmask.addEventListener('click', closeTodoMenu);
+    var tmenu = $('todoMenu');
+    if (tmenu) tmenu.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-act]');
+      if (!b) return;
+      var act = b.getAttribute('data-act');
+      if (act === 'rename') { menuMode = 'rename'; paintTodoMenu(); }
+      else if (act === 'rule') { menuMode = 'rule'; paintTodoMenu(); }
+      else if (act === 'del') { menuMode = 'del'; paintTodoMenu(); }
+      else if (act === 'back') { menuMode = 'list'; paintTodoMenu(); }
+      else if (act === 'renameSave') saveRename();
+      else if (act === 'ruleSave') saveRule();
+      else if (act === 'delSure') deleteTodo();
+    });
+
     /* 主题选择：设置页小色板 + 换风格面板 */
     document.addEventListener('click', function (e) {
       var th = e.target.closest('[data-th]');
@@ -1400,7 +1844,10 @@
   window.SB_DEBUG = {
     state: function () { return S; },
     theme: function () { return currentThemeId; },
-    streak: streak, addWords: addWords
+    streak: streak, addWords: addWords,
+    /* 验收脚本要看「每周三」这类文案拼接，暴露出去免得靠截图猜 */
+    ruleText: ruleText,
+    week: weekData
   };
 
   /* 主题先落地，再渲染内容，避免一帧无样式 */

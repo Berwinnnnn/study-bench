@@ -165,8 +165,33 @@ button,input,select{font-family:inherit}
 .plk span{border-bottom:1px solid currentColor;padding-bottom:1px;cursor:pointer}
 .pquick.left{left:0;right:auto;align-items:flex-start}
 
-/* 一周柱状 */
-.pweek{display:flex;align-items:flex-end;gap:6px;height:50px;margin-top:19px;flex:none}
+/* 一周柱状
+   ─────────────────────────────────────────────────────────────
+   结构：.pwk > (.pweek > i×7 > b) + #pweekGoal + .pwd-row > span×7
+   `.pweek > i > b` 是 21 套主题的公共契约（每套一套图形语言：
+   s05 气泡按直径、s14 散点、s20 横条、s02/s10 用 nth-child 做随机感），
+   所以所有「新东西」都只能加在外层，绝不能碰 i 和 b，也不能改 i 的序号。
+   • 这里刻意不给 .pwk 设 margin-top：主题的 .pweek 自带 margin-top:18.8px，
+     再叠加就会变双倍。上边距沿用主题的，.pwk 只提供定位上下文。
+   • 目标虚线是 #pweekGoal，位置由 JS 实测 .pweek 盒子后写 top —— 21 套主题的
+     height / padding / align-items 都不一样，纯 CSS 算不准。s20 转横向时隐藏。
+   • 【高度预算】加标签行如果直接加高，390×844 下今日页会溢出 39px，
+     打卡按钮被 tabbar 压住 26.7px。所以标签行从柱图区内部「借」高度：
+     JS 给 .pwk 设 --wl（标签行实测高度），.pweek 的 height 用 calc 扣掉它。
+     这样整块柱图的占位与改造前基本一致，不会把下面的内容挤出去。 */
+.pwk{position:relative;flex:none}
+#pweekGoal{display:none;position:absolute;left:0;right:0;height:0;
+  border-top:1px dashed var(--mut);opacity:.4;pointer-events:none;z-index:2}
+#pweekGoal.on{display:block}
+#pweekWrap[data-vertical="1"] #pweekGoal{display:none}
+/* 有标签行时，从柱子高度里扣掉标签占位。
+   --wh 由 JS 实测后写入。
+   必须带 #pweek 提高优先级：媒体查询里的 .pweek{height:74px/44px/34px}
+   和主题的 [data-s=xx] .pweek 都比 .pwk[data-lab] .pweek 更靠后，
+   不加 id 会被它们盖掉（实测 --wh=74px 完全不生效）。 */
+#pweekWrap[data-lab="1"] #pweek{height:var(--wh, 50px)}
+
+.pweek{display:flex;align-items:flex-end;gap:6px;height:50px;flex:none;position:relative}
 .pweek i{flex:1;display:flex;align-items:flex-end;justify-content:center;
   height:100%;position:relative;min-width:0}
 .pweek i b{display:block;width:100%;height:var(--hp,50%);border-radius:4px;
@@ -174,6 +199,25 @@ button,input,select{font-family:inherit}
 /* 完全没数据时，7 根柱退成一条基线，下面补一行说明 */
 .pweek[data-empty="1"] i b{opacity:.14;height:3px!important}
 .pweek[data-empty="1"] i.on b{opacity:.22}
+/* 可点：柱子是进入「某一天」的入口 */
+.pweek i{cursor:pointer}
+.pweek i:focus-visible{outline:2px solid var(--ac);outline-offset:2px;border-radius:4px}
+
+/* 星期 / 词数标签行。gap 由 JS 同步成 .pweek 的 column-gap，标签才正对柱心。
+   刻意压得很矮（两行小字共 ~22px）：这一行是从柱图的高度里「借」来的，
+   多占 1px 柱子就矮 1px。 */
+.pwd-row{display:flex;gap:6px;margin-top:4px}
+.pwd-row span{flex:1;min-width:0;text-align:center;line-height:1.1;
+  cursor:pointer;user-select:none;-webkit-user-select:none}
+.pwd-row i{display:block;font-style:normal;font-size:10px;color:var(--mut);
+  letter-spacing:.04em}
+.pwd-row b{display:block;font-family:var(--num);font-size:10px;font-weight:700;
+  color:var(--ink2);letter-spacing:-.01em;margin-top:0}
+.pwd-row span.on i,.pwd-row span.on b{color:var(--acd)}
+.pwd-row span.on i{font-weight:700}
+.pwd-row span.zero b{opacity:.32}
+.pwd-row span:active{opacity:.6}
+
 .pweek-tip{display:none;font-size:11.5px;color:var(--mut);letter-spacing:.02em;
   margin-top:11px;text-align:center;line-height:1.4}
 
@@ -193,6 +237,85 @@ button,input,select{font-family:inherit}
 .ptg{font-family:var(--num);font-size:11px;color:var(--mut);letter-spacing:.04em;flex:none}
 .pit.on .ptt{opacity:.6;text-decoration:var(--std,none);text-decoration-thickness:1px}
 .plt-empty{font-size:13px;color:var(--mut);line-height:1.6;margin:14px 0 0}
+
+/* 行身长按 / 手指按住时不要弹系统选字气泡。
+   —— 旧版删除做不出来，一半原因就是缺这两条：手指按住 0.6 秒，
+      iOS/安卓先弹「拷贝 / 全选」并把事件打断，长按逻辑根本收不到。 */
+.pit,.pit *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.pit{-webkit-tap-highlight-color:transparent}
+
+/* 行尾的 ⋯ 更多按钮：可见入口，不指望用户猜到长按 */
+.pmo{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:2px;width:24px;height:24px;padding:0;margin-left:2px;border:0;border-radius:6px;
+  background:transparent;cursor:pointer;opacity:.5;transition:opacity .12s,background .12s}
+.pmo i{display:block;width:3px;height:3px;border-radius:50%;background:currentColor}
+.pmo:active{opacity:1;background:var(--acl)}
+.pmo:focus-visible{opacity:1;outline:2px solid var(--ac);outline-offset:1px}
+@media(hover:hover){.pmo:hover{opacity:.85}}
+
+/* ───────── 待办操作浮层 ─────────
+   z-index 高于 pmask(60) / psheet(61)：从浮层里再开一个必须盖住前一个。 */
+.tmask{z-index:64}
+.tmenu{position:fixed;left:0;right:0;bottom:0;z-index:65;
+  width:min(100%,430px);max-width:100%;margin:0 auto;
+  padding:18px 20px calc(18px + env(safe-area-inset-bottom));
+  background:var(--sur);border-radius:20px 20px 0 0;
+  box-shadow:0 -16px 40px -18px rgba(0,0,0,.55);
+  transform:translateY(100%);transition:transform .26s cubic-bezier(.2,.8,.2,1);
+  /* 键盘弹起时浮层不能被顶出屏幕：限高 + 内部滚动 */
+  max-height:88vh;overflow-y:auto;overscroll-behavior:contain}
+.tmenu.show{transform:translateY(0)}
+.tm-h{margin-bottom:14px}
+.tm-h b{display:block;font-size:16px;font-weight:700;letter-spacing:.01em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tm-h span{display:block;font-size:12px;color:var(--mut);margin-top:3px}
+
+/* 三个操作项：整行可点，标题 + 一行灰说明 */
+.tmi{display:block;width:100%;text-align:left;padding:12px 13px;margin-bottom:8px;
+  border:1px solid var(--line);border-radius:var(--r,12px);background:var(--bg);
+  color:var(--ink);font-size:14.5px;font-weight:600;line-height:1.3;
+  cursor:pointer;font-family:inherit;transition:border-color .12s,transform .1s}
+.tmi span{display:block;font-size:11.5px;font-weight:400;color:var(--mut);margin-top:3px}
+.tmi:active{transform:scale(.99);border-color:var(--ac)}
+.tmi.dgr{color:#B23B3B;border-color:#F0DCDC}
+
+/* 重命名输入 */
+.tml{display:block;font-size:12px;color:var(--ink2);margin-bottom:6px}
+.tin{display:block;width:100%;min-width:0;max-width:100%;
+  font-size:16px;padding:10px 12px;border-radius:var(--r,10px);
+  border:1px solid var(--line);background:var(--bg);color:var(--ink);
+  outline:none;font-family:inherit;box-sizing:border-box}
+.tin:focus{border-color:var(--ac)}
+
+/* 改规则：三段 + 星期 / 几号 */
+.tmseg{display:flex;gap:5px;margin-bottom:10px}
+.tmseg span{flex:1;min-width:0;text-align:center;font-size:13px;font-weight:700;
+  padding:9px 0;border-radius:8px;border:1px solid var(--line);color:var(--ink2);
+  line-height:1.25;cursor:pointer;transition:.12s}
+.tmseg span.on{background:var(--ac);color:var(--onac,#fff);border-color:var(--ac)}
+.tmsub{display:none;margin-bottom:10px}
+.tmsub.on{display:flex}
+.tmday{align-items:center;justify-content:center;gap:10px}
+.tmday em{flex:none;font-style:normal;width:34px;height:34px;border-radius:8px;
+  border:1px solid var(--line);display:grid;place-items:center;
+  font-family:var(--num);font-size:17px;color:var(--ink2);cursor:pointer}
+.tmday em:active{background:var(--acl)}
+.tmday u{flex:none;min-width:66px;text-decoration:none;display:flex;align-items:baseline;
+  justify-content:center;gap:4px}
+.tmday b{font-family:var(--num);font-size:19px;font-weight:700;line-height:1}
+.tmday i{font-style:normal;font-size:11px;color:var(--mut)}
+#tmWd{gap:4px}
+#tmWd span{flex:1;min-width:0;text-align:center;font-size:12.5px;font-weight:600;
+  padding:8px 0;border-radius:6px;border:1px solid var(--line);color:var(--ink2);
+  line-height:1.2;cursor:pointer}
+#tmWd span.on{background:var(--acl);color:var(--acd);border-color:var(--acd)}
+
+/* 删除二次确认 */
+.tmwarn{font-size:14.5px;line-height:1.55;margin:2px 0 16px;color:var(--ink)}
+.tmwarn span{display:block;font-size:12px;color:var(--mut);margin-top:6px}
+
+.tmact{display:flex;gap:8px;margin-top:16px}
+.tmact .pbt{flex:1;padding:12px 6px;font-size:14px;border-radius:var(--br,12px)}
 
 /* 待办添加条 */
 .padd{display:flex;align-items:center;gap:5px;margin-top:4px;position:relative;flex:none}
@@ -511,8 +634,16 @@ input.pin{text-align:right;padding-top:5px;padding-bottom:5px}
       </div>
     </div>
 
-    <div class="pweek" id="pweek"></div>
-    <div class="pweek-tip" id="weekTip">近七天还没有记录</div>
+    <!-- 一周柱状：交互说明见 app.js 的 renderWeek()。
+         .pweek > i > b 三层是 21 套主题的公共契约，一个字都不能改；
+         星期 / 词数放在外面的 pwd-row，靠同步 gap 对齐柱心。
+         #pweekGoal 是目标虚线，位置由 JS 实测后写 top。 -->
+    <div class="pwk" id="pweekWrap">
+      <div class="pweek" id="pweek"></div>
+      <div id="pweekGoal"></div>
+      <div class="pwd-row" id="pwdRow"></div>
+    </div>
+    <div class="pweek-tip" id="weekTip">近七天还没有记录 · 点柱子可以补录</div>
 
     <div class="plist" id="todoList"></div>
 
@@ -651,7 +782,7 @@ input.pin{text-align:right;padding-top:5px;padding-bottom:5px}
     </div>
 
     <p class="pnote" style="text-align:center;margin:10px 0 0" id="verTxt">
-      本地优先 · 断网可打卡 · v3.4 · build 1124-2359</p>
+      本地优先 · 断网可打卡 · v3.5 · build 1126-1814</p>
     <p class="pnote" style="text-align:center;margin:2px 0 0">
       <a href="javascript:void 0" id="forceUpd"
          style="color:var(--acd);text-decoration:underline;text-underline-offset:2px;opacity:.75">版本不对？点这里强制更新</a></p>
@@ -679,6 +810,18 @@ input.pin{text-align:right;padding-top:5px;padding-bottom:5px}
     <button class="pbt" id="sheetCancel">取消</button>
     <button class="pbt pri" id="sheetSave">保存</button>
   </div>
+</div>
+
+<!-- 待办操作浮层（重命名 / 改规则 / 删除）
+     刻意不用 confirm() / prompt()：在 file:// 与某些 WebView 里前者会被
+     静默吞掉、后者会被禁用，表现就是「点了没反应」。全页内自绘。 -->
+<div class="pmask tmask" id="todoMask"></div>
+<div class="tmenu" id="todoMenu" role="dialog" aria-modal="true" aria-labelledby="tmTitle">
+  <div class="tm-h">
+    <b id="tmTitle">待办</b>
+    <span id="tmSub">—</span>
+  </div>
+  <div class="tm-body" id="tmBody"></div>
 </div>
 
 <!-- 主题选择浮层 -->
